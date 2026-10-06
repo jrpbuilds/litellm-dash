@@ -71,6 +71,10 @@ It listens on `0.0.0.0:34998` by default; override with `PORT` / `HOST`.
 The database is opened read-only, so the dashboard can run as an unprivileged
 user as long as it can read the file.
 
+The unit below binds to localhost (`HOST=127.0.0.1`) — the dashboard has no
+authentication, so don't expose it beyond the host unless something in front
+of it (reverse proxy with auth, an SSH tunnel, etc.) provides access control.
+
 ### 3. (Optional) systemd user unit
 
 ```ini
@@ -82,6 +86,7 @@ WorkingDirectory=/opt/litellm-dash
 ExecStart=/usr/local/bin/bun src/server.ts
 Restart=on-failure
 Environment=PORT=34998
+Environment=HOST=127.0.0.1
 Environment=LITELLM_DASH_DB=/var/lib/litellm/usage.db
 
 [Install]
@@ -101,8 +106,9 @@ WantedBy=default.target
 
 ## Notes
 
-- No authentication is built in — put it behind your reverse proxy or bind
-  to localhost if that matters for your deployment.
+- No authentication is built in — the default unit binds to localhost
+  (`HOST=127.0.0.1`); if you must expose it, put a reverse proxy with auth in
+  front.
 - The SQLite file is written by the LiteLLM process; if LiteLLM runs as
   root in a container with a bind-mounted data dir, host-side reads may
   need appropriate permissions (the WAL sidecar files too).
