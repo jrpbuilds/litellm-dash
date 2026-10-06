@@ -79,10 +79,18 @@ function latencyTier(ms: number | null): string {
   return (LATENCY_TIERS.find((t) => t.maxMs == null || ms < t.maxMs) ?? LATENCY_TIERS[LATENCY_TIERS.length - 1]).cls;
 }
 
-/** Duration cell for the log: value + traffic-light color. */
-function latencyCell(ms: number | null): string {
+/**
+ * Per-request duration with hover latency stats for its model (or provider).
+ * The cell shows just the duration; hovering reveals the group's avg/p95/n
+ * so the strip under the chart isn't needed.
+ */
+function latencyCell(ms: number | null, stats: LatencyResp | null, group: string): string {
   if (ms == null) return `<span class="mut">–</span>`;
-  return `<span class="${latencyTier(ms)}">${fmtDur(ms)}</span>`;
+  const cls = latencyTier(ms);
+  if (!stats) return `<span class="${cls}">${fmtDur(ms)}</span>`;
+  const row = stats.rows.find((r) => r.name === group);
+  if (!row) return `<span class="${cls}">${fmtDur(ms)}</span>`;
+  return `<span class="${cls} lat-tip" tabindex="0">${fmtDur(ms)}<span class="lat-pop">${esc(group)} — ${fmtDur(row.avgMs)} avg · ${fmtDur(row.p95Ms)} p95 · ${row.n} req</span></span>`;
 }
 
 
@@ -439,25 +447,6 @@ function niceTicks(max: number): number[] {
   return out;
 }
 
-// ---------------------------------------------------------------- latency
-
-/** Render the per-model (or per-provider) avg/p95 latency strip. */
-function renderLatency(l: LatencyResp) {
-  const strip = $("latency");
-  if (!l.rows.length) {
-    strip.innerHTML = `<span class="lat-none">No completed requests with durations in this window.</span>`;
-    return;
-  }
-  strip.innerHTML = l.rows
-    .map(
-      (r) =>
-        `<span class="lat-item"><span class="lat-name">${esc(r.name)}</span>` +
-        `<span class="lat-nums">${fmtDur(r.avgMs)} avg · ${fmtDur(r.p95Ms)} p95</span>` +
-        `<span class="lat-n">${r.n} req</span></span>`,
-    )
-    .join("");
-}
-
 // ---------------------------------------------------------------- tables
 
 type RecentResp = {
@@ -472,7 +461,8 @@ const recentState: {
   loadingMore: boolean;
   failuresOnly: boolean;
   expanded: Set<number>;
-} = { rows: [], hasMore: false, loadingMore: false, failuresOnly: false, expanded: new Set() };
+  latency: LatencyResp | null;
+} = { rows: [], hasMore: false, loadingMore: false, failuresOnly: false, expanded: new Set(), latency: null };
 
 function renderRecent() {
   const head = `<thead><tr>
@@ -494,6 +484,7 @@ function renderRecent() {
         failed && recentState.expanded.has(r.id)
           ? `<tr class="errrow"><td colspan="7"><pre class="errmsg">${esc(r.error ?? "no error text recorded")}</pre></td></tr>`
           : "";
+      const group = periodState.group === "provider" ? (r.provider ?? "unknown") : r.model;
       return `<tr class="${failed ? "failed" : ""}">
       <td class="mut">${fmtLogDate(r.ts)}</td>
       <td>${expandBtn}</td>
@@ -501,7 +492,7 @@ function renderRecent() {
       <td class="num">${tokens ? fmtTokens(tokens) : "–"}</td>
       <td class="num mut">${r.prompt_tokens ? fmtTokens(r.prompt_tokens) : "–"}</td>
       <td class="num mut">${r.completion_tokens ? fmtTokens(r.completion_tokens) : "–"}</td>
-      <td class="num">${latencyCell(r.duration_ms)}</td>
+      <td class="num">${latencyCell(r.duration_ms, recentState.latency, group)}</td>
     </tr>` + errRow;
     })
     .join("");
@@ -599,8 +590,14 @@ async function refresh() {
   ]);
   if (s) renderCards(s);
   if (c) renderChart(c);
-  if (lat) renderLatency(lat);
   if (r) mergeRecent(r);
+  // latency feeds the duration hovers — store it, then make sure any
+  // already-rendered rows pick it up
+  if (lat) {
+    const firstLatency = recentState.latency == null;
+    recentState.latency = lat;
+    if (firstLatency) renderRecent();
+  }
   $("export").setAttribute("href", withToken(`/api/export.csv?days=${days}`));
   $("updated").textContent = !s
     ? "api unreachable"

@@ -221,43 +221,6 @@ h1 {
   flex: none;
 }
 
-/* per-model latency strip under the chart */
-.latency {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 20px;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px dashed var(--grid);
-  font-size: 12px;
-  color: var(--muted);
-  min-height: 18px;
-}
-.latency .lat-item {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-  white-space: nowrap;
-}
-.latency .lat-name {
-  color: var(--text);
-  font-weight: 600;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.latency .lat-nums {
-  font-variant-numeric: tabular-nums;
-}
-.latency .lat-n {
-  font-size: 11px;
-  opacity: 0.8;
-}
-.latency .lat-none {
-  color: var(--muted);
-  font-style: italic;
-}
-
 /* --- tooltip --------------------------------------------------------- */
 .tooltip {
   position: absolute;
@@ -481,6 +444,35 @@ tbody tr:hover {
 }
 .lat-bad {
   color: color-mix(in srgb, #f87171 65%, var(--muted));
+}
+
+/* hover target around each duration value; reveals the group's
+   avg/p95/n on hover or keyboard focus, no extra surface otherwise */
+.lat-tip {
+  position: relative;
+  cursor: default;
+}
+.lat-pop {
+  position: absolute;
+  right: 0;
+  top: -34px;
+  white-space: nowrap;
+  background: var(--tooltip-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+  z-index: 6;
+}
+.lat-tip:hover .lat-pop,
+.lat-tip:focus-visible .lat-pop {
+  opacity: 1;
 }
 tr.failed > td {
   border-bottom: 0;
