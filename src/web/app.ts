@@ -37,7 +37,7 @@ function fmtLogDate(iso: string): string {
 
 /** Explicit hues per provider; unknown providers fall back to a stable hash. */
 const PROVIDER_HUES: Record<string, number> = {
-  openference: 270, // purple
+  openference: 225, // brand cornflower blue (#7D94DA)
   "opencode-go": 150, // green
 };
 
