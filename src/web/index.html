@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Usage — LiteLLM Gateway</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="pagehead">
+        <h1>Usage</h1>
+        <div class="periods" id="periods">
+          <button data-days="1">1d</button>
+          <button data-days="7" class="active">7d</button>
+          <button data-days="30">30d</button>
+        </div>
+      </header>
+
+      <section class="cards" id="cards"></section>
+
+      <section class="card chartcard">
+        <div class="cardhead">
+          <div>
+            <h2>Your Usage</h2>
+            <p class="sub">Your usage per day across this period.</p>
+          </div>
+          <div class="groupby">Group By: <b>Model</b></div>
+        </div>
+        <div class="chartwrap">
+          <div class="yaxis" id="yaxis"></div>
+          <div class="plot">
+            <canvas id="chart" width="0" height="0"></canvas>
+            <div class="gridlines" id="gridlines"></div>
+            <div class="xaxis" id="xaxis"></div>
+            <div class="tooltip" id="tooltip" hidden></div>
+          </div>
+        </div>
+        <div class="legend" id="legend"></div>
+      </section>
+
+      <section class="card tablecard">
+        <div class="cardhead">
+          <div>
+            <h2>Usage Log</h2>
+            <p class="sub">Most recent requests through the gateway — times in your local timezone.</p>
+          </div>
+          <a class="btn" id="export" href="/api/export.csv?days=7">⭳ Export CSV</a>
+        </div>
+        <div class="tablewrap">
+          <table class="data" id="recent"></table>
+        </div>
+      </section>
+
+      <footer>
+        <span id="updated"></span>
+        <span class="sep">·</span>
+        <span>litellm-dash</span>
+      </footer>
+    </main>
+    <script type="module" src="./app.ts"></script>
+  </body>
+</html>

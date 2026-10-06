@@ -1,0 +1,10 @@
+{
+  "name": "litellm-dash",
+  "private": true,
+  "scripts": {
+    "start": "bun src/server.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "*"
+  }
+}

@@ -1,0 +1,402 @@
+/* Cursor usage-page style: near-black page, tonal cards, quiet accents. */
+:root {
+  --bg: #0e0e10;
+  --card: #1a1a1f;
+  --card-border: #26262c;
+  --text: #f2f2f3;
+  --muted: #8a8a92;
+  --grid: #232329;
+  --ok: #3ecf8e;
+  --bad: #f87171;
+  --warn: #d9a25f;
+  --tooltip-bg: #111114;
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 20px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* --- page head: title + period pills ------------------------------- */
+.pagehead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+h1 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.periods {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 3px;
+}
+.periods button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 600 12px/1 inherit;
+  padding: 7px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.periods button.active {
+  background: #f2f2f3;
+  color: #0e0e10;
+}
+
+/* --- stat cards ------------------------------------------------------ */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 16px;
+}
+.statcard .label {
+  color: var(--muted);
+  font-size: 12px;
+}
+.statcard .value {
+  font-size: 24px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin-top: 4px;
+  letter-spacing: -0.01em;
+}
+.statcard .value.ok {
+  color: var(--ok);
+}
+.statcard .value.bad {
+  color: var(--bad);
+}
+
+/* --- chart card ------------------------------------------------------ */
+.cardhead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.cardhead h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.sub {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.groupby {
+  color: var(--muted);
+  font-size: 12px;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+.groupby b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.chartwrap {
+  display: flex;
+  gap: 8px;
+}
+.yaxis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  text-align: right;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 0 0 22px 0;
+  min-width: 44px;
+  font-variant-numeric: tabular-nums;
+}
+.plot {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+#chart {
+  display: block;
+  width: 100%;
+  height: 240px;
+}
+.gridlines {
+  position: absolute;
+  inset: 0 0 22px 0;
+  pointer-events: none;
+}
+.gridlines .h {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed var(--grid);
+}
+.xaxis {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 6px;
+  height: 16px;
+  overflow: hidden;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text);
+}
+.legend .item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.legend .sw {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: none;
+}
+
+/* --- tooltip --------------------------------------------------------- */
+.tooltip {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 260px;
+  background: var(--tooltip-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  z-index: 5;
+  pointer-events: none;
+}
+.tooltip .t-date {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.tooltip .t-sub {
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.tooltip .t-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+.tooltip .t-row .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.tooltip .t-row .m {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tooltip .t-row .v {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.tooltip .t-row .p {
+  color: var(--muted);
+  width: 48px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.tooltip .t-total {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid var(--card-border);
+  margin-top: 8px;
+  padding-top: 6px;
+}
+.tooltip .t-total .v {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- buttons / tables ------------------------------------------------ */
+.btn {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 12px;
+  text-decoration: none;
+  flex: none;
+}
+.btn:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.tablewrap {
+  overflow-x: auto;
+}
+table.data {
+  border-collapse: collapse;
+  width: 100%;
+}
+#recent {
+  min-width: 660px;
+}
+th,
+td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(38, 38, 44, 0.7);
+  white-space: nowrap;
+}
+th {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+td.num,
+th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+td.mut {
+  color: var(--muted);
+}
+td.name {
+  font-weight: 500;
+}
+tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.pill {
+  font-size: 11px;
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-weight: 500;
+}
+.pill.ok {
+  color: #8fe6c7;
+  background: rgba(62, 207, 142, 0.12);
+}
+.pill.bad {
+  color: #fca5a5;
+  background: rgba(248, 113, 113, 0.12);
+}
+.pill.warn {
+  color: #ecc48a;
+  background: rgba(217, 162, 95, 0.14);
+}
+.pill.dim {
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.tag {
+  font-size: 10px;
+  color: var(--muted);
+  border: 1px solid var(--card-border);
+  border-radius: 999px;
+  padding: 1px 7px;
+  margin-left: 8px;
+  white-space: nowrap;
+}
+
+/* provider lozenges — self-colored from a stable hue of the name */
+.chip {
+  font-size: 10px;
+  border: 1px solid;
+  border-radius: 999px;
+  padding: 1px 8px;
+  margin-left: 8px;
+  white-space: nowrap;
+  font-weight: 500;
+  vertical-align: middle;
+}
+.chip-tt {
+  margin-left: 6px;
+  flex: none;
+}
+
+.empty {
+  color: var(--muted);
+  text-align: center;
+  padding: 22px !important;
+}
+
+footer {
+  color: var(--muted);
+  font-size: 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+footer a {
+  color: var(--text);
+  text-decoration: none;
+  border-bottom: 1px solid var(--card-border);
+}
+.sep {
+  opacity: 0.5;
+}
+
+@media (max-width: 640px) {
+  .yaxis {
+    min-width: 34px;
+  }
+  .tooltip {
+    width: 210px;
+  }
+}
