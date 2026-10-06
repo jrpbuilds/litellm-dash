@@ -96,7 +96,7 @@ WantedBy=default.target
 | `/api/summary?days=7` | token aggregates for the window (1/7/30) |
 | `/api/chart?days=7` | per-bucket per-model token totals for the cumulative chart |
 | `/api/export.csv?days=7` | CSV of all logged requests in the window |
-| `/api/recent?limit=50` | latest logged requests (max 200) |
+| `/api/recent?limit=50&before_id=<id>` | latest logged requests — `{ rows, hasMore }`, keyset-paged; `before_id` = last row id already shown (max 200 per page) |
 
 ## Notes
 

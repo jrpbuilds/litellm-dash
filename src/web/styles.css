@@ -375,6 +375,21 @@ tbody tr:hover {
   padding: 22px !important;
 }
 
+td.loadmore {
+  text-align: center;
+  border-bottom: 0;
+  padding: 14px 10px;
+}
+button.btn {
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+button.btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 footer {
   color: var(--muted);
   font-size: 12px;

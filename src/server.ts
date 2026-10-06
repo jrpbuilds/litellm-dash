@@ -148,17 +148,29 @@ function exportCsv(days: number): Response {
   });
 }
 
-function recent(limitRaw: string | null) {
+/**
+ * Latest requests, newest first. Keyset pagination on the autoincrement id —
+ * pass `before_id` (the id of the last row already shown) to page further
+ * back. Stable even while new requests land, unlike offset pagination.
+ */
+function recent(limitRaw: string | null, beforeIdRaw: string | null) {
   const limit = Math.min(200, Math.max(1, Number(limitRaw) || 50));
-  return (
+  const beforeId = Number(beforeIdRaw);
+  const hasBefore = Number.isFinite(beforeId) && beforeId > 0;
+  const rows =
     q<Row>(
-      `SELECT ts, COALESCE(model_group, model) AS model, upstream_model, provider,
+      `SELECT id, ts, COALESCE(model_group, model) AS model, upstream_model, provider,
               call_type, stream, prompt_tokens, completion_tokens, total_tokens,
               duration_ms, status, user_agent
-       FROM requests ORDER BY id DESC LIMIT ?`,
-      limit,
-    ) ?? []
-  );
+       FROM requests
+       ${hasBefore ? "WHERE id < ?" : ""}
+       ORDER BY id DESC
+       LIMIT ?`,
+      ...(hasBefore ? [beforeId] : []),
+      limit + 1, // fetch one extra just to know whether more exist
+    ) ?? [];
+  const hasMore = rows.length > limit;
+  return { rows: hasMore ? rows.slice(0, limit) : rows, hasMore };
 }
 
 const server = serve({
@@ -173,8 +185,10 @@ const server = serve({
       Response.json(chart(parseDays(new URL(req.url)))),
     "/api/export.csv": (req) => exportCsv(parseDays(new URL(req.url))),
     "/api/recent": (req) => {
-      const limit = new URL(req.url).searchParams.get("limit");
-      return Response.json(recent(limit));
+      const u = new URL(req.url);
+      return Response.json(
+        recent(u.searchParams.get("limit"), u.searchParams.get("before_id")),
+      );
     },
   },
 });

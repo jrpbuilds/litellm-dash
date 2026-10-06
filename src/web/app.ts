@@ -92,6 +92,7 @@ type ChartResp = {
 };
 
 type RecentRow = {
+  id: number;
   ts: string;
   model: string;
   upstream_model?: string | null;
@@ -365,13 +366,22 @@ function niceTicks(max: number): number[] {
 
 // ---------------------------------------------------------------- tables
 
-function renderRecent(rows: RecentRow[]) {
+type RecentResp = {
+  rows: RecentRow[];
+  hasMore: boolean;
+};
+
+const PAGE_SIZE = 50;
+const recentState: { rows: RecentRow[]; hasMore: boolean; loadingMore: boolean } =
+  { rows: [], hasMore: false, loadingMore: false };
+
+function renderRecent() {
   const head = `<thead><tr>
     <th>Date</th><th>Type</th><th>Model</th>
     <th class="num">Tokens</th><th class="num">Input</th><th class="num">Output</th>
     <th class="num">Duration</th>
   </tr></thead>`;
-  const body = rows
+  const body = recentState.rows
     .map((r) => {
       const type = r.call_type === "acompletion" || r.call_type === "completion" ? "chat" : r.call_type ?? "—";
       const typePill = r.stream ? "chat · stream" : type;
@@ -387,12 +397,59 @@ function renderRecent(rows: RecentRow[]) {
     </tr>`;
     })
     .join("");
+  const foot =
+    recentState.hasMore || recentState.loadingMore
+      ? `<tfoot><tr><td colspan="7" class="loadmore"><button class="btn" id="loadmore"${recentState.loadingMore ? " disabled" : ""}>${recentState.loadingMore ? "Loading…" : "Load more"}</button></td></tr></tfoot>`
+      : "";
   $("recent").innerHTML =
     head +
     `<tbody>${
       body ||
       `<tr><td colspan="7" class="empty">No requests logged yet — traffic will show up here.</td></tr>`
-    }</tbody>`;
+    }</tbody>` +
+    foot;
+}
+
+/** Append the next PAGE_SIZE older requests below what's already shown. */
+async function loadMore() {
+  if (recentState.loadingMore || !recentState.hasMore) return;
+  const lastId = recentState.rows[recentState.rows.length - 1]?.id;
+  if (lastId == null) return;
+  recentState.loadingMore = true;
+  renderRecent();
+  const resp = await getJson<RecentResp>(
+    `/api/recent?limit=${PAGE_SIZE}&before_id=${lastId}`,
+  );
+  if (resp) {
+    recentState.rows = [...recentState.rows, ...resp.rows];
+    recentState.hasMore = resp.hasMore;
+  }
+  recentState.loadingMore = false;
+  renderRecent();
+}
+
+/**
+ * Fold a fresh page-1 fetch into the loaded log: prepend rows newer than what
+ * we have (a poll caught new requests), replace wholesale if the log was
+ * reset or pruned out from under us. Rows the user loaded stay put.
+ */
+function mergeRecent(fresh: RecentResp) {
+  const maxId = recentState.rows[0]?.id ?? 0;
+  if (
+    maxId === 0 ||
+    fresh.rows.length === 0 ||
+    (fresh.rows[0]?.id ?? 0) < maxId
+  ) {
+    recentState.rows = fresh.rows;
+    recentState.hasMore = fresh.hasMore;
+    renderRecent();
+    return;
+  }
+  const newer = fresh.rows.filter((r) => r.id > maxId);
+  const changed = newer.length > 0 || (!fresh.hasMore && recentState.hasMore);
+  if (newer.length) recentState.rows = [...newer, ...recentState.rows];
+  if (!fresh.hasMore) recentState.hasMore = false;
+  if (changed) renderRecent();
 }
 
 // ---------------------------------------------------------------- refresh
@@ -402,11 +459,11 @@ async function refresh() {
   const [s, c, r] = await Promise.all([
     getJson<Summary>(`/api/summary?days=${days}`),
     getJson<ChartResp>(`/api/chart?days=${days}`),
-    getJson<RecentRow[]>("/api/recent?limit=50"),
+    getJson<RecentResp>(`/api/recent?limit=${PAGE_SIZE}`),
   ]);
   if (s) renderCards(s);
   if (c) renderChart(c);
-  if (r) renderRecent(r);
+  if (r) mergeRecent(r);
   $("export").setAttribute("href", `/api/export.csv?days=${days}`);
   $("updated").textContent = !s
     ? "api unreachable"
@@ -429,6 +486,10 @@ document.querySelectorAll("#periods button").forEach((b) =>
 );
 window.addEventListener("resize", () => lastChart && renderChart(lastChart));
 wireChartHover();
+// delegation — the button is re-rendered whenever the table updates
+$("recent").addEventListener("click", (e) => {
+  if ((e.target as HTMLElement).closest("#loadmore")) loadMore();
+});
 
 refresh();
 setInterval(refresh, 10_000);
