@@ -161,6 +161,24 @@ type RecentRow = {
   error?: string | null;
 };
 
+// ------------------------------------------------------------- page status
+
+/**
+ * The header dot reflects gateway health from the same poll that feeds the
+ * page: green + pulse when live, amber when the log DB is missing, red when
+ * the API is unreachable. Class + title kept in sync with the footer text.
+ */
+function setStatus(kind: "live" | "nodb" | "down"): void {
+  const dot = $("statusdot");
+  dot.className = `statusdot ${kind}`;
+  dot.title =
+    kind === "live"
+      ? "Gateway healthy — data is current"
+      : kind === "nodb"
+        ? "usage.db not found — waiting for the first logged request"
+        : "API unreachable";
+}
+
 // ------------------------------------------------------------- stat cards
 
 function renderCards(s: Summary) {
@@ -604,6 +622,7 @@ async function refresh() {
     : s.dbAvailable
       ? `updated ${new Date().toLocaleTimeString("en-GB", { hour12: false })}`
       : "usage.db not found — waiting for the first logged request";
+  setStatus(!s ? "down" : s.dbAvailable ? "live" : "nodb");
 }
 
 function setDays(days: number) {

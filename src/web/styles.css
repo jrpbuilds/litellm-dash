@@ -42,11 +42,54 @@ body {
   flex-wrap: wrap;
   gap: 12px;
 }
+.headleft {
+  min-width: 0;
+}
 h1 {
   margin: 0;
   font-size: 26px;
   font-weight: 700;
   letter-spacing: -0.01em;
+  display: inline-flex;
+  align-items: center;
+  gap: 13px;
+}
+.pagesub {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.statusdot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex: none;
+  position: relative;
+}
+.statusdot.live {
+  background: var(--ok);
+  animation: dotpulse 2.4s ease-in-out infinite;
+}
+.statusdot.nodb {
+  background: var(--warn);
+}
+.statusdot.down {
+  background: var(--bad);
+}
+@keyframes dotpulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(62, 207, 142, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(62, 207, 142, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .statusdot.live {
+    animation: none;
+  }
 }
 .periods {
   display: inline-flex;

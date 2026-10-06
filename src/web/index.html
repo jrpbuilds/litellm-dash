@@ -3,13 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Usage — LiteLLM Gateway</title>
+    <title>Gateway Usage — LiteLLM Dash</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <main class="page">
       <header class="pagehead">
-        <h1>Usage</h1>
+        <div class="headleft">
+          <h1><span class="statusdot" id="statusdot"></span>Gateway Usage</h1>
+          <p class="pagesub">Tokens, latency and provider routing through your LiteLLM proxy.</p>
+        </div>
         <div class="periods" id="periods">
           <button data-days="1">1d</button>
           <button data-days="7" class="active">7d</button>
