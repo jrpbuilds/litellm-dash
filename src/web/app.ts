@@ -92,6 +92,12 @@ type ChartResp = {
   rows: { b: string; name: string; tokens: number }[];
 };
 
+type LatencyResp = {
+  days: number;
+  group: "model" | "provider";
+  rows: { name: string; n: number; avgMs: number; p95Ms: number; maxMs: number }[];
+};
+
 type RecentRow = {
   id: number;
   ts: string;
@@ -369,6 +375,25 @@ function niceTicks(max: number): number[] {
   return out;
 }
 
+// ---------------------------------------------------------------- latency
+
+/** Render the per-model (or per-provider) avg/p95 latency strip. */
+function renderLatency(l: LatencyResp) {
+  const strip = $("latency");
+  if (!l.rows.length) {
+    strip.innerHTML = `<span class="lat-none">No completed requests with durations in this window.</span>`;
+    return;
+  }
+  strip.innerHTML = l.rows
+    .map(
+      (r) =>
+        `<span class="lat-item"><span class="lat-name">${esc(r.name)}</span>` +
+        `<span class="lat-nums">${fmtDur(r.avgMs)} avg · ${fmtDur(r.p95Ms)} p95</span>` +
+        `<span class="lat-n">${r.n} req</span></span>`,
+    )
+    .join("");
+}
+
 // ---------------------------------------------------------------- tables
 
 type RecentResp = {
@@ -502,13 +527,15 @@ function mergeRecent(fresh: RecentResp) {
 
 async function refresh() {
   const days = periodState.days;
-  const [s, c, r] = await Promise.all([
+  const [s, c, lat, r] = await Promise.all([
     getJson<Summary>(`/api/summary?days=${days}`),
     getJson<ChartResp>(`/api/chart?days=${days}&group=${periodState.group}`),
+    getJson<LatencyResp>(`/api/latency?days=${days}&group=${periodState.group}`),
     getJson<RecentResp>(recentUrl(PAGE_SIZE)),
   ]);
   if (s) renderCards(s);
   if (c) renderChart(c);
+  if (lat) renderLatency(lat);
   if (r) mergeRecent(r);
   $("export").setAttribute("href", `/api/export.csv?days=${days}`);
   $("updated").textContent = !s

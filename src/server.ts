@@ -113,6 +113,56 @@ function chart(days: number, group: string | null) {
   };
 }
 
+/**
+ * Per-model (or per-provider) latency stats for the selected window:
+ * request count, average and p95 duration over successful requests.
+ * Same grouping expr as chart() so the toggle stays consistent.
+ */
+function latency(days: number, group: string | null) {
+  const byProvider = group === "provider";
+  const nameExpr = byProvider
+    ? `COALESCE(NULLIF(provider, ''), 'unknown')`
+    : `COALESCE(model_group, model)`;
+  const rows =
+    q<Row>(
+      `SELECT ${nameExpr} AS name,
+              COUNT(*) AS n,
+              AVG(duration_ms) AS avg_ms,
+              MAX(duration_ms) AS max_ms
+       FROM requests
+       WHERE ts >= ? AND status = 'success' AND duration_ms IS NOT NULL
+       GROUP BY name
+       ORDER BY avg_ms DESC`,
+      cutoff(days * DAY),
+    ) ?? [];
+  // p95 per group — cheap at this scale: one bounded query per group
+  const p95 = new Map<string, number>();
+  for (const r of rows) {
+    const name = String(r.name);
+    const dur =
+      q<Row>(
+        `SELECT duration_ms FROM requests
+         WHERE ts >= ? AND status = 'success' AND duration_ms IS NOT NULL
+           AND ${nameExpr} = ?
+         ORDER BY duration_ms`,
+        cutoff(days * DAY),
+        name,
+      ) ?? [];
+    if (dur.length) p95.set(name, Number(dur[Math.floor(dur.length * 0.95)]?.duration_ms ?? 0));
+  }
+  return {
+    days,
+    group: byProvider ? ("provider" as const) : ("model" as const),
+    rows: rows.map((r) => ({
+      name: String(r.name),
+      n: num(r.n),
+      avgMs: Math.round(num(r.avg_ms)),
+      p95Ms: Math.round(p95.get(String(r.name)) ?? 0),
+      maxMs: Math.round(num(r.max_ms)),
+    })),
+  };
+}
+
 function csvEscape(field: unknown): string {
   const s = field == null ? "" : String(field);
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -195,6 +245,12 @@ const server = serve({
       const u = new URL(req.url);
       return Response.json(
         chart(parseDays(u), u.searchParams.get("group")),
+      );
+    },
+    "/api/latency": (req) => {
+      const u = new URL(req.url);
+      return Response.json(
+        latency(parseDays(u), u.searchParams.get("group")),
       );
     },
     "/api/export.csv": (req) => exportCsv(parseDays(new URL(req.url))),
