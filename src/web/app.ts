@@ -62,6 +62,29 @@ function fmtDur(ms: number | null): string {
   return `${m}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 }
 
+/**
+ * Latency traffic-light buckets. Tuned for LLM traffic (median ~25s): under
+ * 10s is genuinely fast, 10-30s is the normal band, 30-60s is slow, over a
+ * minute deserves attention.
+ */
+const LATENCY_TIERS: { maxMs: number | null; cls: string }[] = [
+  { maxMs: 10_000, cls: "lat-good" },
+  { maxMs: 30_000, cls: "lat-mid" },
+  { maxMs: 60_000, cls: "lat-slow" },
+  { maxMs: null, cls: "lat-bad" },
+];
+
+function latencyTier(ms: number | null): string {
+  if (ms == null) return "";
+  return (LATENCY_TIERS.find((t) => t.maxMs == null || ms < t.maxMs) ?? LATENCY_TIERS[LATENCY_TIERS.length - 1]).cls;
+}
+
+/** Duration cell for the log: value + traffic-light color. */
+function latencyCell(ms: number | null): string {
+  if (ms == null) return `<span class="mut">–</span>`;
+  return `<span class="${latencyTier(ms)}">${fmtDur(ms)}</span>`;
+}
+
 
 // ---------------------------------------------------------------- auth
 
@@ -478,7 +501,7 @@ function renderRecent() {
       <td class="num">${tokens ? fmtTokens(tokens) : "–"}</td>
       <td class="num mut">${r.prompt_tokens ? fmtTokens(r.prompt_tokens) : "–"}</td>
       <td class="num mut">${r.completion_tokens ? fmtTokens(r.completion_tokens) : "–"}</td>
-      <td class="num mut">${fmtDur(r.duration_ms)}</td>
+      <td class="num">${latencyCell(r.duration_ms)}</td>
     </tr>` + errRow;
     })
     .join("");

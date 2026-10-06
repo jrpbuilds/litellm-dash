@@ -460,6 +460,21 @@ tbody tr:hover {
 .pill.clickable:hover {
   filter: brightness(1.2);
 }
+
+/* per-request duration traffic lights */
+.lat-good {
+  color: #6ee7a8;
+}
+.lat-mid {
+  color: #ecc48a;
+}
+.lat-slow {
+  color: #f0a35e;
+}
+.lat-bad {
+  color: #f87171;
+  font-weight: 600;
+}
 tr.failed > td {
   border-bottom: 0;
 }
