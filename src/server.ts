@@ -77,24 +77,32 @@ function summary(days: number) {
 }
 
 /**
- * Per-bucket per-model token totals for the cumulative chart.
- * 1d buckets by hour, 7d/30d by UTC day. The client fills zero-buckets.
+ * Per-bucket per-group token totals for the cumulative chart.
+ * `group=model` (default) buckets by model_group; `group=provider`
+ * buckets by the provider that actually routed each request (rows with
+ * no known provider roll up under "unknown"). 1d buckets by hour,
+ * 7d/30d by UTC day. The client fills zero-buckets.
  */
-function chart(days: number) {
+function chart(days: number, group: string | null) {
   const bucket = days === 1 ? `substr(ts, 1, 13)` : `substr(ts, 1, 10)`;
+  const byProvider = group === "provider";
+  const nameExpr = byProvider
+    ? `COALESCE(NULLIF(provider, ''), 'unknown')`
+    : `COALESCE(model_group, model)`;
   const rows =
     q<Row>(
       `SELECT ${bucket} AS b,
-              COALESCE(model_group, model) AS name,
+              ${nameExpr} AS name,
               SUM(total_tokens) AS tokens
        FROM requests
-       WHERE ts >= ? AND COALESCE(model_group, model) != ''
+       WHERE ts >= ? AND ${nameExpr} != ''
        GROUP BY b, name
        ORDER BY b`,
       cutoff(days * DAY),
     ) ?? [];
   return {
     days,
+    group: byProvider ? ("provider" as const) : ("model" as const),
     bucketType: days === 1 ? ("hour" as const) : ("day" as const),
     now: new Date().toISOString(),
     rows: rows.map((r) => ({
@@ -181,8 +189,12 @@ const server = serve({
     "/": index,
     "/api/summary": (req) =>
       Response.json(summary(parseDays(new URL(req.url)))),
-    "/api/chart": (req) =>
-      Response.json(chart(parseDays(new URL(req.url)))),
+    "/api/chart": (req) => {
+      const u = new URL(req.url);
+      return Response.json(
+        chart(parseDays(u), u.searchParams.get("group")),
+      );
+    },
     "/api/export.csv": (req) => exportCsv(parseDays(new URL(req.url))),
     "/api/recent": (req) => {
       const u = new URL(req.url);

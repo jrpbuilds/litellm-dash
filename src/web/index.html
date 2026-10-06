@@ -25,7 +25,11 @@
             <h2>Your Usage</h2>
             <p class="sub">Your usage per day across this period.</p>
           </div>
-          <div class="groupby">Group By: <b>Model</b></div>
+          <div class="groupby" id="groupby">
+            <span class="gb-label">Group By:</span>
+            <button data-group="model" class="active">Model</button>
+            <button data-group="provider">Provider</button>
+          </div>
         </div>
         <div class="chartwrap">
           <div class="yaxis" id="yaxis"></div>

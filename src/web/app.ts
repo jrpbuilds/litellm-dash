@@ -87,6 +87,7 @@ type Summary = {
 type ChartResp = {
   days: number;
   bucketType: "hour" | "day";
+  group: "model" | "provider";
   now: string;
   rows: { b: string; name: string; tokens: number }[];
 };
@@ -139,7 +140,10 @@ const SERIES_COLORS = [
   "#94a3b8",
 ];
 
-const periodState: { days: number } = { days: 7 };
+const periodState: { days: number; group: "model" | "provider" } = {
+  days: 7,
+  group: "model",
+};
 
 function bucketLabels(days: number): string[] {
   const out: string[] = [];
@@ -458,7 +462,7 @@ async function refresh() {
   const days = periodState.days;
   const [s, c, r] = await Promise.all([
     getJson<Summary>(`/api/summary?days=${days}`),
-    getJson<ChartResp>(`/api/chart?days=${days}`),
+    getJson<ChartResp>(`/api/chart?days=${days}&group=${periodState.group}`),
     getJson<RecentResp>(`/api/recent?limit=${PAGE_SIZE}`),
   ]);
   if (s) renderCards(s);
@@ -481,8 +485,26 @@ function setDays(days: number) {
   refresh();
 }
 
+function setGroup(group: "model" | "provider") {
+  if (periodState.group === group) return;
+  periodState.group = group;
+  selectedBucket = null; // different series — hide tooltip until re-selected
+  document.querySelectorAll("#groupby button").forEach((b) => {
+    b.classList.toggle(
+      "active",
+      (b as HTMLElement).dataset.group === group,
+    );
+  });
+  refresh();
+}
+
 document.querySelectorAll("#periods button").forEach((b) =>
   b.addEventListener("click", () => setDays(Number((b as HTMLElement).dataset.days))),
+);
+document.querySelectorAll("#groupby button").forEach((b) =>
+  b.addEventListener("click", () =>
+    setGroup((b as HTMLElement).dataset.group as "model" | "provider"),
+  ),
 );
 window.addEventListener("resize", () => lastChart && renderChart(lastChart));
 wireChartHover();

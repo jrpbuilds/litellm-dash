@@ -120,15 +120,35 @@ h1 {
   font-size: 12px;
 }
 .groupby {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   color: var(--muted);
   font-size: 12px;
   border: 1px solid var(--card-border);
   border-radius: 8px;
-  padding: 6px 10px;
+  padding: 3px;
 }
-.groupby b {
+.groupby .gb-label {
+  color: var(--muted);
+  margin: 0 6px 0 4px;
+}
+.groupby button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 600 12px/1 inherit;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.groupby button:hover {
   color: var(--text);
-  font-weight: 600;
+  background: rgba(255, 255, 255, 0.05);
+}
+.groupby button.active {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.09);
 }
 
 .chartwrap {

@@ -94,7 +94,7 @@ WantedBy=default.target
 |---|---|
 | `/` | dashboard UI (10s auto-refresh) |
 | `/api/summary?days=7` | token aggregates for the window (1/7/30) |
-| `/api/chart?days=7` | per-bucket per-model token totals for the cumulative chart |
+| `/api/chart?days=7&group=model` | per-bucket per-group token totals for the cumulative chart (`group` = `model` or `provider`) |
 | `/api/export.csv?days=7` | CSV of all logged requests in the window |
 | `/api/recent?limit=50&before_id=<id>` | latest logged requests — `{ rows, hasMore }`, keyset-paged; `before_id` = last row id already shown (max 200 per page) |
 
