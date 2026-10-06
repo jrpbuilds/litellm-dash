@@ -11,6 +11,12 @@ import index from "./web/index.html";
 const PORT = Number(process.env.PORT ?? 34998);
 const HOST = process.env.HOST ?? "0.0.0.0";
 const DB_PATH = process.env.LITELLM_DASH_DB ?? "./data/usage.db";
+/**
+ * Shared-secret gate. When set, requests must carry it as a `?token=` query
+ * param (page URL) or `Authorization: Bearer` header (API calls). When unset,
+ * the dashboard is open — fine on localhost, not on a LAN.
+ */
+const TOKEN = process.env.LITELLM_DASH_TOKEN ?? "";
 
 const HOUR = 3_600_000;
 const DAY = 86_400_000;
@@ -233,28 +239,62 @@ function recent(limitRaw: string | null, beforeIdRaw: string | null, statusRaw: 
   return { rows: hasMore ? rows.slice(0, limit) : rows, hasMore };
 }
 
+/**
+ * Shared-secret gate for /api/* routes. When LITELLM_DASH_TOKEN is set,
+ * requests must carry it as a `?token=` query param (the client appends it
+ * to every fetch) or an `Authorization: Bearer` header (API clients).
+ * Without the env var every request passes. The HTML/JS/CSS shell stays
+ * open — it's identical to the public repo, and all data lives in the API.
+ */
+const authorized = (req: Request): boolean => {
+  if (!TOKEN) return true;
+  const u = new URL(req.url);
+  const supplied =
+    u.searchParams.get("token") ??
+    req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "") ??
+    "";
+  const a = new TextEncoder().encode(supplied);
+  const b = new TextEncoder().encode(TOKEN);
+  // compare over the longer of the two lengths so runtime doesn't leak
+  // how many bytes matched
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    diff |= (a[i] ?? 0) ^ (b[i] ?? 0);
+  }
+  return diff === 0;
+};
+
+/** Wrap an API handler with the token check. */
+const gate =
+  (handler: (req: Request) => Response) =>
+  (req: Request): Response =>
+    authorized(req)
+      ? handler(req)
+      : new Response("unauthorized\n", { status: 401 });
+
 const server = serve({
   port: PORT,
   hostname: HOST,
   development: false,
   routes: {
     "/": index,
-    "/api/summary": (req) =>
+    "/api/summary": gate((req) =>
       Response.json(summary(parseDays(new URL(req.url)))),
-    "/api/chart": (req) => {
+    ),
+    "/api/chart": gate((req) => {
       const u = new URL(req.url);
       return Response.json(
         chart(parseDays(u), u.searchParams.get("group")),
       );
-    },
-    "/api/latency": (req) => {
+    }),
+    "/api/latency": gate((req) => {
       const u = new URL(req.url);
       return Response.json(
         latency(parseDays(u), u.searchParams.get("group")),
       );
-    },
-    "/api/export.csv": (req) => exportCsv(parseDays(new URL(req.url))),
-    "/api/recent": (req) => {
+    }),
+    "/api/export.csv": gate((req) => exportCsv(parseDays(new URL(req.url)))),
+    "/api/recent": gate((req) => {
       const u = new URL(req.url);
       return Response.json(
         recent(
@@ -263,7 +303,7 @@ const server = serve({
           u.searchParams.get("status"),
         ),
       );
-    },
+    }),
   },
 });
 

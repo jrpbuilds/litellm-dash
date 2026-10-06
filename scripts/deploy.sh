@@ -8,6 +8,10 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEPLOY_DIR="${LITELLM_DASH_DEPLOY_DIR:-/home/agent/docker/litellm/dashboard}"
 UNIT="${LITELLM_DASH_UNIT:-litellm-dash}"
 PORT="${LITELLM_DASH_PORT:-34998}"
+# Pick up the shared secret from the unit file if the server requires one
+TOKEN="${LITELLM_DASH_TOKEN:-$(systemctl show --user "$UNIT" --property=Environment 2>/dev/null | grep -oP 'LITELLM_DASH_TOKEN=\K\S+' || true)}"
+AUTH=""
+[ -n "$TOKEN" ] && AUTH="token=$TOKEN"
 
 echo "== syncing $REPO -> $DEPLOY_DIR"
 rsync -a --delete --exclude .git --exclude node_modules --exclude data \
@@ -18,7 +22,7 @@ systemctl --user restart "$UNIT"
 
 # wait for the service to come back up
 for _ in $(seq 1 20); do
-  if curl -sf "http://127.0.0.1:$PORT/api/summary?days=7" >/dev/null; then
+  if curl -sf "http://127.0.0.1:$PORT/api/summary?days=7&$AUTH" >/dev/null; then
     break
   fi
   sleep 0.5
@@ -36,10 +40,10 @@ check() {
   fi
 }
 check "dashboard html" "http://127.0.0.1:$PORT/"
-check "summary"       "http://127.0.0.1:$PORT/api/summary?days=7"
-check "chart"         "http://127.0.0.1:$PORT/api/chart?days=7&group=model"
-check "latency"       "http://127.0.0.1:$PORT/api/latency?days=7&group=model"
-check "recent"        "http://127.0.0.1:$PORT/api/recent?limit=5"
+check "summary"       "http://127.0.0.1:$PORT/api/summary?days=7&$AUTH"
+check "chart"         "http://127.0.0.1:$PORT/api/chart?days=7&group=model&$AUTH"
+check "latency"       "http://127.0.0.1:$PORT/api/latency?days=7&group=model&$AUTH"
+check "recent"        "http://127.0.0.1:$PORT/api/recent?limit=5&$AUTH"
 
 if [ "$fail" -ne 0 ]; then
   echo "== deploy smoke FAILED"

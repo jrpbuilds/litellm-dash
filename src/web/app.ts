@@ -63,9 +63,24 @@ function fmtDur(ms: number | null): string {
 }
 
 
+// ---------------------------------------------------------------- auth
+
+/**
+ * Shared-secret from the page URL (?token=...), appended to every API call.
+ * Empty when the dashboard runs without LITELLM_DASH_TOKEN — the server
+ * ignores the param in that case, so behaviour is identical either way.
+ */
+const TOKEN = new URLSearchParams(location.search).get("token") ?? "";
+
+/** Append the shared secret to a same-origin URL, if one is in play. */
+function withToken(url: string): string {
+  if (!TOKEN || url.startsWith("http")) return url;
+  return url + (url.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(TOKEN);
+}
+
 async function getJson<T>(url: string): Promise<T | null> {
   try {
-    const r = await fetch(url, { cache: "no-store" });
+    const r = await fetch(withToken(url), { cache: "no-store" });
     if (!r.ok) return null;
     return (await r.json()) as T;
   } catch {
@@ -563,7 +578,7 @@ async function refresh() {
   if (c) renderChart(c);
   if (lat) renderLatency(lat);
   if (r) mergeRecent(r);
-  $("export").setAttribute("href", `/api/export.csv?days=${days}`);
+  $("export").setAttribute("href", withToken(`/api/export.csv?days=${days}`));
   $("updated").textContent = !s
     ? "api unreachable"
     : s.dbAvailable
