@@ -196,6 +196,25 @@ const fullDate = (b: string, bucketType: "hour" | "day"): string => {
 let lastChart: ChartResp | null = null;
 let selectedBucket: number | null = null; // null = tooltip hidden
 
+/** Solid + gradient variants for a series color. Model mode uses the fixed
+ *  palette; provider mode derives from the same stable hue as the log chips,
+ *  so openference is the same color in the chart, legend, and log table. */
+type SeriesColor = { line: string; fillTop: string; fillBottom: string };
+
+function modelColor(i: number): SeriesColor {
+  const hex = SERIES_COLORS[i % SERIES_COLORS.length];
+  return { line: hex, fillTop: hex + "55", fillBottom: hex + "05" };
+}
+
+function providerColor(name: string): SeriesColor {
+  const hue = providerHue(name);
+  return {
+    line: `hsl(${hue} 70% 65%)`,
+    fillTop: `hsl(${hue} 70% 65% / 0.33)`,
+    fillBottom: `hsl(${hue} 70% 65% / 0.03)`,
+  };
+}
+
 function renderChart(c: ChartResp) {
   lastChart = c;
   const labels = bucketLabels(c.days);
@@ -203,17 +222,24 @@ function renderChart(c: ChartResp) {
     selectedBucket = null;
   }
   const canvas = $<HTMLCanvasElement>("chart");
-  // one series per model — totals across providers (per-provider split stays
-  // in the log table chips and the tooltip)
+  // one series per group (model or provider); in provider mode colors match
+  // the log-table chips so the same provider looks the same everywhere
   const names = [...new Set(c.rows.map((r) => r.name))];
   const totals = new Map<string, number>();
   for (const r of c.rows) totals.set(r.name, (totals.get(r.name) ?? 0) + r.tokens);
   names.sort((a, b) => (totals.get(b) ?? 0) - (totals.get(a) ?? 0));
-  const colors = new Map(names.map((n, i) => [n, SERIES_COLORS[i % SERIES_COLORS.length]]));
+  const colors = new Map(
+    names.map((n, i) => [
+      n,
+      c.group === "provider" ? providerColor(n) : modelColor(i),
+    ]),
+  );
 
   const series = names.map((name) => ({
     name,
-    color: colors.get(name)!,
+    color: colors.get(name)!.line,
+    fillTop: colors.get(name)!.fillTop,
+    fillBottom: colors.get(name)!.fillBottom,
     daily: labels.map((b) => {
       const hit = c.rows.find((r) => r.b === b && r.name === name);
       return hit ? hit.tokens : 0;
@@ -244,13 +270,13 @@ function renderChart(c: ChartResp) {
     labels.length === 1 ? w / 2 : (i / (labels.length - 1)) * (w - padR);
   const y = (v: number) => h - (v / max) * (h - 10);
 
-  // stack cumulative areas bottom-up in reverse rank so green paints last
+  // stack cumulative areas bottom-up in reverse rank so the top series paints last
   for (let si = cum.length - 1; si >= 0; si--) {
     const s = cum[si];
     if (s.points.every((v) => v === 0)) continue;
     const grad = ctx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, s.color + "55");
-    grad.addColorStop(1, s.color + "05");
+    grad.addColorStop(0, s.fillTop);
+    grad.addColorStop(1, s.fillBottom);
     ctx.beginPath();
     ctx.moveTo(x(0), y(s.points[0]));
     s.points.forEach((v, i) => ctx.lineTo(x(i), y(v)));
