@@ -461,19 +461,19 @@ tbody tr:hover {
   filter: brightness(1.2);
 }
 
-/* per-request duration traffic lights */
+/* per-request duration traffic lights — same hues as before, mixed 65/35
+   with the page's muted gray so they read without shouting */
 .lat-good {
-  color: #6ee7a8;
+  color: color-mix(in srgb, #6ee7a8 65%, var(--muted));
 }
 .lat-mid {
-  color: #ecc48a;
+  color: color-mix(in srgb, #ecc48a 65%, var(--muted));
 }
 .lat-slow {
-  color: #f0a35e;
+  color: color-mix(in srgb, #f0a35e 65%, var(--muted));
 }
 .lat-bad {
-  color: #f87171;
-  font-weight: 600;
+  color: color-mix(in srgb, #f87171 65%, var(--muted));
 }
 tr.failed > td {
   border-bottom: 0;
