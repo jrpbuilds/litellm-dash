@@ -462,7 +462,14 @@ tbody tr:hover {
 }
 
 /* per-request duration traffic lights — same hues as before, mixed 65/35
-   with the page's muted gray so they read without shouting */
+   with the page's muted gray so they read without shouting; sized below
+   the row text so the value reads as a secondary detail */
+.lat-good,
+.lat-mid,
+.lat-slow,
+.lat-bad {
+  font-size: 12px;
+}
 .lat-good {
   color: color-mix(in srgb, #6ee7a8 65%, var(--muted));
 }
