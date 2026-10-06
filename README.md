@@ -106,6 +106,10 @@ WantedBy=default.target
 
 ## Notes
 
+- `bash scripts/deploy.sh` syncs the repo to the systemd deploy copy,
+  restarts the unit, and smoke-checks the live endpoints. `bun test` runs
+  the API test suite against a seeded temp DB.
+
 - No authentication is built in — the default unit binds to localhost
   (`HOST=127.0.0.1`); if you must expose it, put a reverse proxy with auth in
   front.
