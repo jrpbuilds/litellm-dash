@@ -49,7 +49,13 @@
             <h2>Usage Log</h2>
             <p class="sub">Most recent requests through the gateway — times in your local timezone.</p>
           </div>
-          <a class="btn" id="export" href="/api/export.csv?days=7">⭳ Export CSV</a>
+          <div class="headactions">
+            <div class="logfilter" id="logfilter">
+              <button data-filter="all" class="active">All</button>
+              <button data-filter="failures">Failures</button>
+            </div>
+            <a class="btn" id="export" href="/api/export.csv?days=7">⭳ Export CSV</a>
+          </div>
         </div>
         <div class="tablewrap">
           <table class="data" id="recent"></table>

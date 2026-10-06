@@ -160,18 +160,20 @@ function exportCsv(days: number): Response {
  * Latest requests, newest first. Keyset pagination on the autoincrement id —
  * pass `before_id` (the id of the last row already shown) to page further
  * back. Stable even while new requests land, unlike offset pagination.
+ * `status=failure` restricts the page to failed requests.
  */
-function recent(limitRaw: string | null, beforeIdRaw: string | null) {
+function recent(limitRaw: string | null, beforeIdRaw: string | null, statusRaw: string | null) {
   const limit = Math.min(200, Math.max(1, Number(limitRaw) || 50));
   const beforeId = Number(beforeIdRaw);
   const hasBefore = Number.isFinite(beforeId) && beforeId > 0;
+  const failuresOnly = statusRaw === "failure";
   const rows =
     q<Row>(
       `SELECT id, ts, COALESCE(model_group, model) AS model, upstream_model, provider,
               call_type, stream, prompt_tokens, completion_tokens, total_tokens,
-              duration_ms, status, user_agent
+              duration_ms, status, user_agent, error
        FROM requests
-       ${hasBefore ? "WHERE id < ?" : ""}
+       WHERE ${failuresOnly ? "status != 'success' AND " : ""}${hasBefore ? "id < ?" : "1=1"}
        ORDER BY id DESC
        LIMIT ?`,
       ...(hasBefore ? [beforeId] : []),
@@ -199,7 +201,11 @@ const server = serve({
     "/api/recent": (req) => {
       const u = new URL(req.url);
       return Response.json(
-        recent(u.searchParams.get("limit"), u.searchParams.get("before_id")),
+        recent(
+          u.searchParams.get("limit"),
+          u.searchParams.get("before_id"),
+          u.searchParams.get("status"),
+        ),
       );
     },
   },

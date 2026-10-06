@@ -106,6 +106,7 @@ type RecentRow = {
   duration_ms: number | null;
   status: string;
   user_agent: string | null;
+  error?: string | null;
 };
 
 // ------------------------------------------------------------- stat cards
@@ -376,8 +377,13 @@ type RecentResp = {
 };
 
 const PAGE_SIZE = 50;
-const recentState: { rows: RecentRow[]; hasMore: boolean; loadingMore: boolean } =
-  { rows: [], hasMore: false, loadingMore: false };
+const recentState: {
+  rows: RecentRow[];
+  hasMore: boolean;
+  loadingMore: boolean;
+  failuresOnly: boolean;
+  expanded: Set<number>;
+} = { rows: [], hasMore: false, loadingMore: false, failuresOnly: false, expanded: new Set() };
 
 function renderRecent() {
   const head = `<thead><tr>
@@ -390,17 +396,29 @@ function renderRecent() {
       const type = r.call_type === "acompletion" || r.call_type === "completion" ? "chat" : r.call_type ?? "—";
       const typePill = r.stream ? "chat · stream" : type;
       const tokens = r.total_tokens ?? r.prompt_tokens + r.completion_tokens;
-      return `<tr>
+      const failed = r.status !== "success";
+      const pillCls = failed ? "bad clickable" : "dim";
+      const expandBtn = failed
+        ? `<span class="pill ${pillCls}" data-err="${r.id}" role="button" tabindex="0">${esc(typePill)} ${recentState.expanded.has(r.id) ? "▲" : "▼"}</span>`
+        : `<span class="pill ${pillCls}">${esc(typePill)}</span>`;
+      const errRow =
+        failed && recentState.expanded.has(r.id)
+          ? `<tr class="errrow"><td colspan="7"><pre class="errmsg">${esc(r.error ?? "no error text recorded")}</pre></td></tr>`
+          : "";
+      return `<tr class="${failed ? "failed" : ""}">
       <td class="mut">${fmtLogDate(r.ts)}</td>
-      <td><span class="pill ${r.status === "success" ? "dim" : "bad"}">${esc(typePill)}</span></td>
+      <td>${expandBtn}</td>
       <td class="name">${esc(r.model)}${r.provider ? providerChip(r.provider) : ""}</td>
       <td class="num">${tokens ? fmtTokens(tokens) : "–"}</td>
       <td class="num mut">${r.prompt_tokens ? fmtTokens(r.prompt_tokens) : "–"}</td>
       <td class="num mut">${r.completion_tokens ? fmtTokens(r.completion_tokens) : "–"}</td>
       <td class="num mut">${fmtDur(r.duration_ms)}</td>
-    </tr>`;
+    </tr>` + errRow;
     })
     .join("");
+  const emptyMsg = recentState.failuresOnly
+    ? "No failed requests in the log — everything succeeded."
+    : "No requests logged yet — traffic will show up here.";
   const foot =
     recentState.hasMore || recentState.loadingMore
       ? `<tfoot><tr><td colspan="7" class="loadmore"><button class="btn" id="loadmore"${recentState.loadingMore ? " disabled" : ""}>${recentState.loadingMore ? "Loading…" : "Load more"}</button></td></tr></tfoot>`
@@ -408,8 +426,7 @@ function renderRecent() {
   $("recent").innerHTML =
     head +
     `<tbody>${
-      body ||
-      `<tr><td colspan="7" class="empty">No requests logged yet — traffic will show up here.</td></tr>`
+      body || `<tr><td colspan="7" class="empty">${emptyMsg}</td></tr>`
     }</tbody>` +
     foot;
 }
@@ -421,14 +438,39 @@ async function loadMore() {
   if (lastId == null) return;
   recentState.loadingMore = true;
   renderRecent();
-  const resp = await getJson<RecentResp>(
-    `/api/recent?limit=${PAGE_SIZE}&before_id=${lastId}`,
-  );
+  const resp = await getJson<RecentResp>(recentUrl(PAGE_SIZE, lastId));
   if (resp) {
     recentState.rows = [...recentState.rows, ...resp.rows];
     recentState.hasMore = resp.hasMore;
   }
   recentState.loadingMore = false;
+  renderRecent();
+}
+
+/** Build a /api/recent URL honouring the current failures filter. */
+function recentUrl(limit: number, beforeId?: number): string {
+  const p = new URLSearchParams({ limit: String(limit) });
+  if (beforeId != null) p.set("before_id", String(beforeId));
+  if (recentState.failuresOnly) p.set("status", "failure");
+  return `/api/recent?${p}`;
+}
+
+/** Switch between all-requests and failures-only views. */
+function setFailuresOnly(on: boolean) {
+  if (recentState.failuresOnly === on) return;
+  recentState.failuresOnly = on;
+  recentState.expanded.clear();
+  document.querySelectorAll("#logfilter button").forEach((b) => {
+    b.classList.toggle("active", (b as HTMLElement).dataset.filter === (on ? "failures" : "all"));
+  });
+  refreshLog();
+}
+
+async function refreshLog() {
+  const resp = await getJson<RecentResp>(recentUrl(PAGE_SIZE));
+  if (!resp) return;
+  recentState.rows = resp.rows;
+  recentState.hasMore = resp.hasMore;
   renderRecent();
 }
 
@@ -463,7 +505,7 @@ async function refresh() {
   const [s, c, r] = await Promise.all([
     getJson<Summary>(`/api/summary?days=${days}`),
     getJson<ChartResp>(`/api/chart?days=${days}&group=${periodState.group}`),
-    getJson<RecentResp>(`/api/recent?limit=${PAGE_SIZE}`),
+    getJson<RecentResp>(recentUrl(PAGE_SIZE)),
   ]);
   if (s) renderCards(s);
   if (c) renderChart(c);
@@ -508,10 +550,34 @@ document.querySelectorAll("#groupby button").forEach((b) =>
 );
 window.addEventListener("resize", () => lastChart && renderChart(lastChart));
 wireChartHover();
-// delegation — the button is re-rendered whenever the table updates
+// delegation — the buttons are re-rendered whenever the table updates
 $("recent").addEventListener("click", (e) => {
-  if ((e.target as HTMLElement).closest("#loadmore")) loadMore();
+  const t = e.target as HTMLElement;
+  if (t.closest("#loadmore")) loadMore();
+  const errPill = t.closest("[data-err]");
+  if (errPill) {
+    const id = Number((errPill as HTMLElement).dataset.err);
+    if (recentState.expanded.has(id)) recentState.expanded.delete(id);
+    else recentState.expanded.add(id);
+    renderRecent();
+  }
 });
+$("recent").addEventListener("keydown", (e) => {
+  if ((e as KeyboardEvent).key !== "Enter" && (e as KeyboardEvent).key !== " ") return;
+  const errPill = (e.target as HTMLElement).closest("[data-err]");
+  if (errPill) {
+    e.preventDefault();
+    const id = Number((errPill as HTMLElement).dataset.err);
+    if (recentState.expanded.has(id)) recentState.expanded.delete(id);
+    else recentState.expanded.add(id);
+    renderRecent();
+  }
+});
+document.querySelectorAll("#logfilter button").forEach((b) =>
+  b.addEventListener("click", () =>
+    setFailuresOnly((b as HTMLElement).dataset.filter === "failures"),
+  ),
+);
 
 refresh();
 setInterval(refresh, 10_000);
