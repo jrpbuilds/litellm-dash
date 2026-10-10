@@ -522,6 +522,43 @@ tbody tr:hover {
   #recent .chip {
     display: none;
   }
+  /* On phones the column headers lie (duration cells show colored values
+     but the header truncates) — drop the header row; compact values are
+     self-evident and the expanded card carries full labels. */
+  #recent thead {
+    display: none;
+  }
+  #recent td {
+    padding-top: 9px;
+    padding-bottom: 9px;
+  }
+  tr.rowmain td:first-child {
+    width: 34%; /* date column breathes; model+tokens share the rest */
+  }
+  #recent td.num {
+    white-space: nowrap;
+  }
+  /* Column widths on mobile (4 visible cols). table-layout:fixed sizes
+     columns from the first row — thead is hidden, so widths are declared
+     per-cell and apply to the sizing row too. */
+  #recent {
+    table-layout: fixed;
+    width: 100%;
+  }
+  #recent td:nth-child(3) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #recent td:first-child {
+    width: 36%;
+  }
+  #recent td:nth-child(3) {
+    width: 32%;
+  }
+  #recent td:nth-child(4),
+  #recent td:nth-child(7) {
+    width: 16%;
+  }
 }
 
 /* Mobile expandable rows: affordance + detail card */
@@ -546,21 +583,47 @@ tbody tr:hover {
   tr.rowmain.tappable[aria-expanded="true"] td:first-child::after {
     transform: rotate(90deg);
   }
+  /* Open row reads instantly: hairline accent on the left + lifted bg. */
+  tr.rowmain.tappable[aria-expanded="true"] td:first-child {
+    box-shadow: inset 3px 0 0 var(--ok);
+  }
+  tr.rowmain.tappable[aria-expanded="true"] td {
+    background: rgba(255, 255, 255, 0.03);
+  }
   tr.rowmain.tappable:active {
     background: rgba(255, 255, 255, 0.05);
   }
   tr.mobilerow > td {
     border-bottom: 1px solid rgba(38, 38, 44, 0.7);
     padding: 0 10px 12px;
+    animation: rowreveal 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+}
+@keyframes rowreveal {
+  from {
+    opacity: 0;
+    clip-path: inset(0 0 100% 0);
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0% 0);
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  tr.mobilerow > td {
+    animation: none;
   }
 }
 
 /* The detail card itself (shared visuals, mobile-only placement) */
 .detailcard {
-  background: var(--bg);
-  border: 1px solid var(--card-border);
+  background: color-mix(in srgb, var(--bg) 88%, #ffffff);
+  border: 1px solid color-mix(in srgb, var(--card-border) 70%, #ffffff);
   border-radius: 10px;
   padding: 12px 14px;
+  margin-bottom: 2px;
   animation: detailin 0.18s ease;
 }
 @keyframes detailin {
@@ -599,7 +662,7 @@ tbody tr:hover {
   min-width: 0;
 }
 .detailcard .d-label {
-  color: var(--muted);
+  color: color-mix(in srgb, var(--muted) 78%, var(--text));
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -611,6 +674,29 @@ tbody tr:hover {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* Status gets a real pill; duration reuses the latency traffic lights. */
+.detailcard .d-value.lat-good,
+.detailcard .d-value.lat-mid,
+.detailcard .d-value.lat-slow,
+.detailcard .d-value.lat-bad {
+  font-size: 13px;
+}
+.detailcard .d-status {
+  align-self: flex-start;
+  margin-top: 1px;
+}
+/* Provider renders as the same colored chip used elsewhere on the page. */
+.detailcard .d-value.d-provider {
+  color: hsl(var(--h, 220) 70% 75%);
+  background: hsl(var(--h, 220) 60% 20% / 0.55);
+  border: 1px solid hsl(var(--h, 220) 60% 50% / 0.35);
+  border-radius: 999px;
+  padding: 1px 9px;
+  font-size: 11px;
+  font-weight: 500;
+  width: fit-content;
+  max-width: 100%;
 }
 .detailcard .d-meta {
   margin-top: 10px;
@@ -697,6 +783,7 @@ tbody tr:hover {
   position: absolute;
   right: 0;
   top: -34px;
+  max-width: 70vw;
   white-space: nowrap;
   background: var(--tooltip-bg);
   border: 1px solid var(--card-border);
@@ -756,6 +843,27 @@ button.btn:disabled {
   opacity: 0.55;
   cursor: default;
 }
+button.btn.loading {
+  position: relative;
+  color: transparent;
+}
+button.btn.loading::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--muted);
+  border-top-color: transparent;
+  animation: btnspin 0.7s linear infinite;
+}
+@keyframes btnspin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 footer {
   color: var(--muted);
@@ -780,5 +888,50 @@ footer a {
   }
   .tooltip {
     width: 210px;
+  }
+}
+
+
+/* First-load skeletons: soft pulsing bars where the real values land. */
+.skelbar {
+  display: block;
+  height: 14px;
+  width: 70%;
+  border-radius: 6px;
+  background: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0.05) 40%,
+    rgba(255, 255, 255, 0.11) 50%,
+    rgba(255, 255, 255, 0.05) 60%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+.skelbar.wide {
+  height: 22px;
+  width: 45%;
+  margin-top: 6px;
+}
+.statcard.skel .label {
+  min-height: 14px;
+}
+tr.skelrow td {
+  padding: 12px 10px;
+}
+tr.skelrow .skelbar {
+  height: 12px;
+}
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skelbar {
+    animation: none;
+    background: rgba(255, 255, 255, 0.07);
   }
 }

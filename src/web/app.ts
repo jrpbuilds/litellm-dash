@@ -496,14 +496,15 @@ type RecentResp = {
 };
 
 const PAGE_SIZE = 50;
+/** Which request row is expanded (mobile accordion — one at a time). */
+let expandedId: number | null = null;
 const recentState: {
   rows: RecentRow[];
   hasMore: boolean;
   loadingMore: boolean;
   failuresOnly: boolean;
-  expanded: Set<number>;
   latency: LatencyResp | null;
-} = { rows: [], hasMore: false, loadingMore: false, failuresOnly: false, expanded: new Set(), latency: null };
+} = { rows: [], hasMore: false, loadingMore: false, failuresOnly: false, latency: null };
 
 function renderRecent() {
   const head = `<thead><tr>
@@ -520,10 +521,10 @@ function renderRecent() {
       const failed = r.status !== "success";
       const pillCls = failed ? "bad clickable" : "dim";
       const expandBtn = failed
-        ? `<span class="pill ${pillCls}" data-err="${r.id}" role="button" tabindex="0">${esc(typePill)} ${recentState.expanded.has(r.id) ? "▲" : "▼"}</span>`
+        ? `<span class="pill ${pillCls}" data-err="${r.id}" role="button" tabindex="0">${esc(typePill)} ${expandedId === r.id ? "▲" : "▼"}</span>`
         : `<span class="pill ${pillCls}">${esc(typePill)}</span>`;
       const errRow =
-        failed && recentState.expanded.has(r.id)
+        failed && expandedId === r.id
           ? `<tr class="errrow"><td colspan="7"><pre class="errmsg">${esc(r.error ?? "no error text recorded")}</pre></td></tr>`
           : "";
       const group = periodState.group === "provider" ? (r.provider ?? "unknown") : r.model;
@@ -531,10 +532,10 @@ function renderRecent() {
       // detail panel (chip, type, input/output split, error, agent meta).
       const rowCls = `rowmain${failed ? " failed" : ""}${isMobile ? " tappable" : ""}`;
       const mobileDetail =
-        isMobile && recentState.expanded.has(r.id)
+        isMobile && expandedId === r.id
           ? `<tr class="mobilerow"><td colspan="7">${detailCard(r, type, typePill, tokens, group)}</td></tr>`
           : "";
-      return `<tr class="${rowCls}" data-row="${r.id}"${isMobile ? ' tabindex="0" role="button" aria-expanded="' + (recentState.expanded.has(r.id) ? "true" : "false") + '"' : ""}>
+      return `<tr class="${rowCls}" data-row="${r.id}"${isMobile ? ' tabindex="0" role="button" aria-expanded="' + (expandedId === r.id ? "true" : "false") + '"' : ""}>
       <td class="mut">${fmtLogDate(r.ts)}</td>
       <td>${expandBtn}</td>
       <td class="name">${esc(r.model)}${r.provider ? providerChip(r.provider) : ""}</td>
@@ -550,7 +551,7 @@ function renderRecent() {
     : "No requests logged yet — traffic will show up here.";
   const foot =
     recentState.hasMore || recentState.loadingMore
-      ? `<tfoot><tr><td colspan="7" class="loadmore"><button class="btn" id="loadmore"${recentState.loadingMore ? " disabled" : ""}>${recentState.loadingMore ? "Loading…" : "Load more"}</button></td></tr></tfoot>`
+      ? `<tfoot><tr><td colspan="7" class="loadmore"><button class="btn${recentState.loadingMore ? " loading" : ""}" id="loadmore"${recentState.loadingMore ? " disabled" : ""}>Load more</button></td></tr></tfoot>`
       : "";
   $("recent").innerHTML =
     head +
@@ -573,21 +574,40 @@ function detailCard(
   group: string,
 ): string {
   const failed = r.status !== "success";
-  const stats: { label: string; value: string }[] = [
+  // Status pill + duration reuse the latency traffic-light tiers so color
+  // always means the same thing everywhere on the page.
+  const statusPill = failed
+    ? `<span class="pill bad d-status">failed</span>`
+    : `<span class="pill ok d-status">success</span>`;
+  const stats: {
+    label: string;
+    value: string;
+    valueCls?: string;
+    hue?: number;
+    unknown?: boolean;
+  }[] = [
     { label: "Type", value: esc(typePill) },
-    { label: "Provider", value: r.provider ? esc(r.provider) : "unknown" },
+    {
+      label: "Provider",
+      value: r.provider ? esc(r.provider) : "unknown",
+      valueCls: "d-provider",
+      hue: r.provider ? providerHue(r.provider) : 0,
+      unknown: !r.provider,
+    },
     { label: "Upstream", value: r.upstream_model ? esc(r.upstream_model) : "—" },
     { label: "Input tokens", value: r.prompt_tokens ? fmtTokens(r.prompt_tokens) : "–" },
     { label: "Output tokens", value: r.completion_tokens ? fmtTokens(r.completion_tokens) : "–" },
     { label: "Total tokens", value: tokens ? fmtTokens(tokens) : "–" },
-    { label: "Duration", value: r.duration_ms != null ? fmtDur(r.duration_ms) : "–" },
-    { label: "Status", value: failed ? "failed" : "success" },
   ];
   return `<div class="detailcard">
-    <div class="d-head">${esc(r.model)}${r.provider ? providerChip(r.provider) : ""}</div>
     <div class="d-grid">${stats
-      .map((s) => `<div class="d-item"><span class="d-label">${s.label}</span><span class="d-value">${s.value}</span></div>`)
-      .join("")}</div>
+      .map(
+        (s) =>
+          `<div class="d-item"><span class="d-label">${s.label}</span><span class="d-value ${s.valueCls ?? ""}"${s.hue != null && !s.unknown ? ` style="--h:${s.hue}"` : ""}>${s.value}</span></div>`,
+      )
+      .join("")}
+      <div class="d-item"><span class="d-label">Status</span>${statusPill}</div>
+    </div>
     ${failed ? `<pre class="errmsg">${esc(r.error ?? "no error text recorded")}</pre>` : ""}
     <div class="d-meta">${esc(r.user_agent ?? "")}</div>
   </div>`;
@@ -621,7 +641,7 @@ function recentUrl(limit: number, beforeId?: number): string {
 function setFailuresOnly(on: boolean) {
   if (recentState.failuresOnly === on) return;
   recentState.failuresOnly = on;
-  recentState.expanded.clear();
+  expandedId = null;
   document.querySelectorAll("#logfilter button").forEach((b) => {
     b.classList.toggle("active", (b as HTMLElement).dataset.filter === (on ? "failures" : "all"));
   });
@@ -733,12 +753,12 @@ $("recent").addEventListener("click", (e) => {
     renderRecent();
     return;
   }
-  // Mobile: tapping anywhere on a row expands its detail card.
+  // Mobile: tapping anywhere on a row expands its detail card (accordion —
+  // opening one closes the previous).
   const row = t.closest("tr.rowmain.tappable");
   if (row) {
     const id = Number((row as HTMLElement).dataset.row);
-    if (recentState.expanded.has(id)) recentState.expanded.delete(id);
-    else recentState.expanded.add(id);
+    expandedId = expandedId === id ? null : id;
     renderRecent();
   }
 });
@@ -759,8 +779,7 @@ $("recent").addEventListener("keydown", (e) => {
   if (row) {
     e.preventDefault();
     const id = Number((row as HTMLElement).dataset.row);
-    if (recentState.expanded.has(id)) recentState.expanded.delete(id);
-    else recentState.expanded.add(id);
+    expandedId = expandedId === id ? null : id;
     renderRecent();
   }
 });
@@ -826,6 +845,21 @@ wireLogout();
  * The full refresh() only fires after the probe succeeds, and the 10s
  * poll only starts once signed in.
  */
+/** Show shimmer skeletons in the stat cards + log table while the first
+ * fetch resolves; replaced by real content on first render. */
+function showSkeletons() {
+  const dash = $("dashboard");
+  if (!dash || dash.hidden) return;
+  $("cards").innerHTML = Array.from(
+    { length: 4 },
+    () => `<div class="card statcard skel"><div class="label skelbar"></div><div class="value skelbar wide"></div></div>`,
+  ).join("");
+  $("recent").innerHTML = `<tbody>${Array.from(
+    { length: 6 },
+    () => `<tr class="skelrow"><td class="mut"><div class="skelbar"></div></td><td><div class="skelbar"></div></td><td class="num"><div class="skelbar"></div></td><td class="num"><div class="skelbar"></div></td></tr>`,
+  ).join("")}</tbody>`;
+}
+
 async function boot() {
   // Server-gated mode: on / the dashboard shell only exists after login, so
   // the local loginview (if any) is hidden preemptively; on /login there is
@@ -846,6 +880,7 @@ async function boot() {
       return;
     }
     $("dashboard").hidden = false;
+    showSkeletons();
     wireLogout();
     await refresh();
     startPolling();
