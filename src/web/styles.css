@@ -536,6 +536,15 @@ tbody tr:hover {
   white-space: nowrap;
 }
 
+/* subtle vision marker after the model name in a log row */
+.vision-icon {
+  font-size: 11px;
+  margin-left: 6px;
+  vertical-align: middle;
+  opacity: 0.75;
+  cursor: help;
+}
+
 /* provider lozenges — self-colored from a stable hue of the name */
 .chip {
   font-size: 10px;

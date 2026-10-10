@@ -182,6 +182,7 @@ type RecentRow = {
   status: string;
   user_agent: string | null;
   requester_ip?: string | null;
+  vision?: number | null;
   error?: string | null;
 };
 
@@ -540,7 +541,7 @@ function renderRecent() {
       return `<tr class="${rowCls}" data-row="${r.id}" tabindex="0" role="button" aria-expanded="${expandedId === r.id ? "true" : "false"}">
       <td class="mut">${fmtLogDate(r.ts)}</td>
       <td>${expandBtn}</td>
-      <td class="name">${esc(r.model)}${r.provider ? providerChip(r.provider) : ""}</td>
+      <td class="name">${esc(r.model)}${r.vision ? `<span class="vision-icon" title="Used vision (image input)" aria-label="Used vision (image input)">👁</span>` : ""}${r.provider ? providerChip(r.provider) : ""}</td>
       <td class="num">${tokens ? fmtTokens(tokens) : "–"}</td>
       <td class="num mut">${r.prompt_tokens ? fmtTokens(r.prompt_tokens) : "–"}</td>
       <td class="num mut">${r.completion_tokens ? fmtTokens(r.completion_tokens) : "–"}</td>
@@ -620,6 +621,7 @@ function detailCard(
     { label: "Input tokens", value: r.prompt_tokens ? fmtTokens(r.prompt_tokens) : "–" },
     { label: "Output tokens", value: r.completion_tokens ? fmtTokens(r.completion_tokens) : "–" },
     { label: "Total tokens", value: tokens ? fmtTokens(tokens) : "–" },
+    { label: "Vision input", value: r.vision ? "yes" : "no", valueCls: r.vision ? "lat-good" : "dim" },
   ];
   return `<div class="detailcard">
     <div class="d-grid">${stats

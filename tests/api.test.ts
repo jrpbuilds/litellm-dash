@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS requests (
     status TEXT NOT NULL,
     user_agent TEXT,
     requester_ip TEXT,
+    vision INTEGER NOT NULL DEFAULT 0,
     error TEXT
 );`;
 

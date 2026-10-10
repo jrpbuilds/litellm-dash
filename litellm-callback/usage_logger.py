@@ -14,7 +14,9 @@ Registered in config.yaml:
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -26,6 +28,9 @@ DB_PATH = os.environ.get("LITELLM_USAGE_DB", "/app/data/usage.db")
 RETENTION_DAYS = int(os.environ.get("LITELLM_USAGE_RETENTION_DAYS", "90"))
 _PRUNE_INTERVAL = 500  # writes between retention prunes
 _ERROR_MAX = 500
+# image_url is the OpenAI chat-completions multimodal marker; "input_image"
+# is the Responses-API shape; data: URIs cover inline base64 images.
+_IMAGE_MARKERS = re.compile(r'image_url|"input_image"|data:image/')
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS requests (
@@ -55,6 +60,7 @@ CREATE INDEX IF NOT EXISTS idx_requests_group_ts ON requests (model_group, ts);
 _PROVIDER_BY_BASE = {
     "https://api.openference.com": "openference",
     "https://opencode.ai": "opencode-go",
+    "https://api.z.ai": "zai-coding",
 }
 
 _extra = os.environ.get("LITELLM_USAGE_PROVIDERS", "")
@@ -89,6 +95,20 @@ def _number(value: Any) -> int:
     return value if isinstance(value, (int, float)) else 0
 
 
+def _vision_requested(messages: Any) -> int:
+    """1 when any message carries multimodal image content.
+
+    Most gateways pass the request body through as-is (a list of dicts with
+    "content: [{type: image_url,...}]" or a JSON string for some proxies)
+    without dict-hashing the whole body as a str — Cheap last-resort scan
+    for the image markers, bounded so huge bodies don't stall the logger.
+    """
+    if not messages:
+        return 0
+    text = messages if isinstance(messages, str) else json.dumps(messages, default=str)
+    return 1 if _IMAGE_MARKERS.search(text[:1_000_000]) else 0
+
+
 class SQLiteUsageLogger(CustomLogger):
     """CustomLogger that appends request metadata to a local SQLite file."""
 
@@ -107,10 +127,12 @@ class SQLiteUsageLogger(CustomLogger):
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
             conn.executescript(_SCHEMA)
-            # migrate pre-provider DBs in place
+            # migrate DBs written by older callback versions in place
             cols = {r[1] for r in conn.execute("PRAGMA table_info(requests)")}
             if "provider" not in cols:
                 conn.execute("ALTER TABLE requests ADD COLUMN provider TEXT")
+            if "vision" not in cols:
+                conn.execute("ALTER TABLE requests ADD COLUMN vision INTEGER NOT NULL DEFAULT 0")
             self._conn = conn
         return self._conn
 
@@ -125,7 +147,7 @@ class SQLiteUsageLogger(CustomLogger):
                 "INSERT INTO requests (ts, model, model_group, upstream_model,"
                 " provider, call_type, stream, prompt_tokens, completion_tokens,"
                 " total_tokens, duration_ms, status, user_agent, requester_ip,"
-                " error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " error, vision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 row,
             )
             self._writes += 1
@@ -149,6 +171,7 @@ class SQLiteUsageLogger(CustomLogger):
         upstream_model = slp.get("model")
         provider = _provider(slp.get("api_base"))
         stream = 1 if (slp.get("stream") or kwargs.get("stream")) else 0
+        vision = _vision_requested(slp.get("messages"))
 
         prompt = _number(slp.get("prompt_tokens"))
         completion = _number(slp.get("completion_tokens"))
@@ -170,6 +193,7 @@ class SQLiteUsageLogger(CustomLogger):
             slp.get("user_agent"),
             slp.get("requester_ip_address"),
             error,
+            vision,
         )
 
     # -- CustomLogger hooks -------------------------------------------------
