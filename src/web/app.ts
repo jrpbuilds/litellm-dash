@@ -523,19 +523,19 @@ function renderRecent() {
       const expandBtn = failed
         ? `<span class="pill ${pillCls}" data-err="${r.id}" role="button" tabindex="0">${esc(typePill)} ${expandedId === r.id ? "▲" : "▼"}</span>`
         : `<span class="pill ${pillCls}">${esc(typePill)}</span>`;
-      const errRow =
-        failed && expandedId === r.id
-          ? `<tr class="errrow"><td colspan="7"><pre class="errmsg">${esc(r.error ?? "no error text recorded")}</pre></td></tr>`
-          : "";
+
       const group = periodState.group === "provider" ? (r.provider ?? "unknown") : r.model;
       // Mobile: hidden columns carry the detail — a tap on the row expands a
       // detail panel (chip, type, input/output split, error, agent meta).
-      const rowCls = `rowmain${failed ? " failed" : ""}${isMobile ? " tappable" : ""}`;
-      const mobileDetail =
-        isMobile && expandedId === r.id
-          ? `<tr class="mobilerow"><td colspan="7">${detailCard(r, type, typePill, tokens, group)}</td></tr>`
+      const rowCls = `rowmain${failed ? " failed" : ""} tappable`;
+      // The expanded detail card renders on every screen size now; on
+      // desktop it appears in place of (and for failures, in addition to)
+      // the old errrow treatment.
+      const detailRow =
+        expandedId === r.id
+          ? `<tr class="mobilerow"><td colspan="7">${detailCard(r, type, typePill, tokens, group)}${failed ? `<pre class="errmsg desktop-err">${esc(r.error ?? "no error text recorded")}</pre>` : ""}</td></tr>`
           : "";
-      return `<tr class="${rowCls}" data-row="${r.id}"${isMobile ? ' tabindex="0" role="button" aria-expanded="' + (expandedId === r.id ? "true" : "false") + '"' : ""}>
+      return `<tr class="${rowCls}" data-row="${r.id}" tabindex="0" role="button" aria-expanded="${expandedId === r.id ? "true" : "false"}">
       <td class="mut">${fmtLogDate(r.ts)}</td>
       <td>${expandBtn}</td>
       <td class="name">${esc(r.model)}${r.provider ? providerChip(r.provider) : ""}</td>
@@ -543,7 +543,7 @@ function renderRecent() {
       <td class="num mut">${r.prompt_tokens ? fmtTokens(r.prompt_tokens) : "–"}</td>
       <td class="num mut">${r.completion_tokens ? fmtTokens(r.completion_tokens) : "–"}</td>
       <td class="num">${latencyCell(r.duration_ms, recentState.latency, group)}</td>
-    </tr>` + errRow + mobileDetail;
+    </tr>` + detailRow;
     })
     .join("");
   const emptyMsg = recentState.failuresOnly
@@ -721,6 +721,7 @@ function setDays(days: number) {
 function setGroup(group: "model" | "provider") {
   if (periodState.group === group) return;
   periodState.group = group;
+  setGroupUI(group);
   selectedBucket = null; // different series — hide tooltip until re-selected
   document.querySelectorAll("#groupby button").forEach((b) => {
     b.classList.toggle(
@@ -734,11 +735,41 @@ function setGroup(group: "model" | "provider") {
 document.querySelectorAll("#periods button").forEach((b) =>
   b.addEventListener("click", () => setDays(Number((b as HTMLElement).dataset.days))),
 );
-document.querySelectorAll("#groupby button").forEach((b) =>
-  b.addEventListener("click", () =>
-    setGroup((b as HTMLElement).dataset.group as "model" | "provider"),
-  ),
+const groupDD = $("groupdd");
+const groupMenu = $("groupdd-menu");
+const setGroupUI = (group: "model" | "provider") => {
+  $("groupdd-value").textContent = group === "provider" ? "Provider" : "Model";
+  groupMenu.querySelectorAll("button").forEach((b) => {
+    const on = (b as HTMLElement).dataset.group === group;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-selected", String(on));
+  });
+};
+groupDD.addEventListener("click", () => {
+  const open = groupMenu.hidden;
+  groupMenu.hidden = !open;
+  groupDD.setAttribute("aria-expanded", String(open));
+});
+groupMenu.querySelectorAll("button").forEach((b) =>
+  b.addEventListener("click", () => {
+    groupMenu.hidden = true;
+    groupDD.setAttribute("aria-expanded", "false");
+    setGroup((b as HTMLElement).dataset.group as "model" | "provider");
+  }),
 );
+// close on outside click / Escape
+document.addEventListener("click", (e) => {
+  if (!(e.target as HTMLElement).closest("#groupby")) {
+    groupMenu.hidden = true;
+    groupDD.setAttribute("aria-expanded", "false");
+  }
+});
+document.addEventListener("keydown", (e) => {
+  if ((e as KeyboardEvent).key === "Escape") {
+    groupMenu.hidden = true;
+    groupDD.setAttribute("aria-expanded", "false");
+  }
+});
 window.addEventListener("resize", () => lastChart && renderChart(lastChart));
 wireChartHover();
 // delegation — the buttons are re-rendered whenever the table updates
