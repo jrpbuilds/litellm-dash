@@ -213,12 +213,33 @@ function renderCards(s: Summary) {
     { label: "Output tokens", value: fmtTokens(s.completionTokens) },
     { label: "Requests", value: String(s.requests) },
   ];
-  $("cards").innerHTML = cards
+  const fresh = cards
     .map(
       (c) =>
         `<div class="card statcard"><div class="label">${c.label}</div><div class="value">${c.value}</div></div>`,
     )
     .join("");
+  const container = $("cards");
+  if (!container.childElementCount) {
+    container.innerHTML = fresh; // first paint: no crossfade
+    return;
+  }
+  // Polls every 10s: crossfade values that actually changed — DOM must not
+  // churn (re-rendering the whole grid resets hover states).
+  const current = container.querySelectorAll<HTMLElement>(".statcard .value");
+  if (current.length !== cards.length) {
+    container.innerHTML = fresh;
+    return;
+  }
+  cards.forEach((c, i) => {
+    const el = current[i];
+    if (el.textContent === c.value) return;
+    el.classList.add("update");
+    setTimeout(() => {
+      el.textContent = c.value;
+      el.classList.remove("update");
+    }, 180);
+  });
 }
 
 // ----------------------------------------------------------------- chart
@@ -306,6 +327,7 @@ function providerColor(name: string): SeriesColor {
 
 function renderChart(c: ChartResp) {
   lastChart = c;
+  updateCrosshair();
   const labels = bucketLabels(c.days);
   if (selectedBucket !== null && selectedBucket > labels.length - 1) {
     selectedBucket = null;
@@ -446,6 +468,29 @@ function renderChart(c: ChartResp) {
 }
 
 /** Attach hover/click selection on the chart canvas. */
+/** Position the hover crosshair under the current bucket selection. */
+function updateCrosshair() {
+  const plot = document.querySelector<HTMLElement>(".plot");
+  let bar = plot?.querySelector<HTMLElement>(".crosshair");
+  if (!plot) return;
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.className = "crosshair";
+    plot.appendChild(bar);
+  }
+  if (selectedBucket === null || !lastChart) {
+    bar.style.opacity = "0";
+    return;
+  }
+  const canvas = $<HTMLCanvasElement>("chart");
+  const w = canvas.clientWidth;
+  const padR = 6;
+  const labels = bucketLabels(lastChart.days);
+  const x = labels.length === 1 ? w / 2 : (selectedBucket / (labels.length - 1)) * (w - padR);
+  bar.style.left = `${x}px`;
+  bar.style.opacity = "1";
+}
+
 function wireChartHover() {
   const canvas = $<HTMLCanvasElement>("chart");
   if (!canvas) return; // login page has no chart

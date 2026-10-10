@@ -126,6 +126,9 @@ h1 {
 .periods button:hover {
   color: var(--text);
 }
+.periods button {
+  transition: color 0.12s ease, background 0.12s ease;
+}
 .periods button.active {
   background: #262626;
   color: var(--text);
@@ -171,7 +174,10 @@ h1 {
   font-variant-numeric: tabular-nums;
   margin-top: 3px;
   letter-spacing: -0.01em;
-  transition: opacity 0.25s ease;
+  transition: opacity 0.18s ease;
+}
+.statcard .value.update {
+  opacity: 0.35;
 }
 .statcard .value.ok {
   color: var(--ok);
@@ -308,6 +314,15 @@ h1 {
   inset: 0 0 22px 0;
   pointer-events: none;
 }
+.crosshair {
+  position: absolute;
+  top: 0;
+  bottom: 22px;
+  width: 1px;
+  background: linear-gradient(to bottom, rgba(255,255,255,0.14), rgba(255,255,255,0.02));
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
 .gridlines .h {
   position: absolute;
   left: 0;
@@ -340,6 +355,12 @@ h1 {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  padding: 3px 8px;
+  border-radius: 999px;
+  transition: background 0.12s ease;
+}
+.legend .item:hover {
+  background: rgba(255, 255, 255, 0.05);
 }
 .legend .sw {
   width: 10px;
@@ -437,6 +458,19 @@ h1 {
 
 
 /* --- login view ------------------------------------------------------ */
+.loginpage .loginform {
+  animation: loginin 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes loginin {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
 .loginpage {
   display: flex;
   align-items: center;
@@ -493,6 +527,12 @@ h1 {
 .loginbtn:hover {
   background: #5adba4;
 }
+.loginbtn:active {
+  transform: translateY(1px);
+}
+.loginform .loginmsg {
+  transition: opacity 0.15s ease;
+}
 .loginmsg {
   color: var(--bad);
   font-size: 12px;
@@ -527,6 +567,12 @@ th {
   text-transform: none;
   letter-spacing: 0;
   font-weight: 400;
+}
+thead th {
+  position: sticky;
+  top: 0;
+  background: var(--card);
+  z-index: 2;
 }
 td.num,
 th.num {
@@ -642,14 +688,18 @@ tbody tr:hover {
     text-overflow: ellipsis;
   }
   #recent td:first-child {
-    width: 36%;
+    width: 35.5%;
   }
   #recent td:nth-child(3) {
-    width: 32%;
+    width: 31.5%;
   }
   #recent td:nth-child(4),
   #recent td:nth-child(7) {
-    width: 16%;
+    width: 15.5%;
+  }
+  /* absorbed subpixel rounding: prevent 2px phantom scroll */
+  .tablewrap {
+    overflow-x: clip;
   }
 }
 
@@ -985,6 +1035,11 @@ button.btn.loading::after {
   to {
     transform: rotate(360deg);
   }
+}
+/* softer spin curve */
+@keyframes btnspinsoft {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 footer {
