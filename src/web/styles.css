@@ -424,7 +424,12 @@ table.data {
   width: 100%;
 }
 #recent {
-  min-width: 660px;
+  min-width: 0; /* mobile hides columns via CSS; no forced h-scroll */
+}
+@media (min-width: 641px) {
+  #recent {
+    min-width: 660px;
+  }
 }
 th,
 td {
@@ -498,6 +503,24 @@ tbody tr:hover {
   white-space: nowrap;
   font-weight: 500;
   vertical-align: middle;
+}
+
+/* Mobile: the usage log has 7 columns and doesn't fit a phone viewport —
+   drop Type (redundant with the stream pill on desktop, and chat-stream
+   nuance matters less on small screens), Input/Output (keep Total), and
+   the provider chip, so rows read on one line. */
+@media (max-width: 640px) {
+  #recent th:nth-child(2),
+  #recent td:nth-child(2),
+  #recent th:nth-child(5),
+  #recent td:nth-child(5),
+  #recent th:nth-child(6),
+  #recent td:nth-child(6) {
+    display: none;
+  }
+  #recent .chip {
+    display: none;
+  }
 }
 .chip-tt {
   margin-left: 6px;
