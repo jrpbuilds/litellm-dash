@@ -63,32 +63,58 @@ check() {
     fail=1
   fi
 }
-check "dashboard html" "http://127.0.0.1:$PORT/"
-# summary/chart/latency/recent pass the cookie jar (user/pass mode), the
-# token query param (token mode), or nothing (open mode)
-check "summary"       "http://127.0.0.1:$PORT/api/summary?days=7&$AUTH"
-check "chart"         "http://127.0.0.1:$PORT/api/chart?days=7&group=model&$AUTH"
-check "latency"       "http://127.0.0.1:$PORT/api/latency?days=7&group=model&$AUTH"
-check "recent"        "http://127.0.0.1:$PORT/api/recent?limit=5&$AUTH"
-check "session"       "http://127.0.0.1:$PORT/api/session&$AUTH"
+check() {
+  local name="$1" url="$2" extra="${3:-}"
+  if curl -sf $extra "$url" >/dev/null; then
+    echo "  ok   $name"
+  else
+    echo "  FAIL $name ($url)"
+    fail=1
+  fi
+}
 
-# re-run the data checks with the cookie jar when in user/pass mode
+# which auth mode did the service come up in?
 if [ -n "$DASH_USER" ] && [ -n "$DASH_PASSWORD" ]; then
-  check() {
-    local name="$1" url="$2"
-    if curl -sf -b "$JAR" "$url" >/dev/null; then
-      echo "  ok   $name (cookie)"
+  MODE="userpass"
+elif [ -n "$TOKEN" ]; then
+  MODE="token"
+else
+  MODE="open"
+fi
+
+check "dashboard html" "http://127.0.0.1:$PORT/"
+case "$MODE" in
+  userpass)
+    # everything runs through the logged-in cookie jar
+    check "summary"    "http://127.0.0.1:$PORT/api/summary?days=7" "-b $JAR"
+    check "chart"      "http://127.0.0.1:$PORT/api/chart?days=7&group=model" "-b $JAR"
+    check "latency"    "http://127.0.0.1:$PORT/api/latency?days=7&group=model" "-b $JAR"
+    check "recent"     "http://127.0.0.1:$PORT/api/recent?limit=5" "-b $JAR"
+    check "csv export" "http://127.0.0.1:$PORT/api/export.csv?days=7" "-b $JAR"
+    check "session"    "http://127.0.0.1:$PORT/api/session" "-b $JAR"
+    # and the gate actually rejects anonymous requests
+    if curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/api/summary?days=7" | grep -q 401; then
+      echo "  ok   anonymous rejected (401)"
     else
-      echo "  FAIL $name ($url)"
+      echo "  FAIL anonymous request was not rejected"
       fail=1
     fi
-  }
-  check "summary"       "http://127.0.0.1:$PORT/api/summary?days=7"
-  check "chart"         "http://127.0.0.1:$PORT/api/chart?days=7&group=model"
-  check "latency"       "http://127.0.0.1:$PORT/api/latency?days=7&group=model"
-  check "recent"        "http://127.0.0.1:$PORT/api/recent?limit=5"
-  check "csv export"    "http://127.0.0.1:$PORT/api/export.csv?days=7"
-fi
+    ;;
+  token)
+    check "summary"    "http://127.0.0.1:$PORT/api/summary?days=7&$AUTH"
+    check "chart"      "http://127.0.0.1:$PORT/api/chart?days=7&group=model&$AUTH"
+    check "latency"    "http://127.0.0.1:$PORT/api/latency?days=7&group=model&$AUTH"
+    check "recent"     "http://127.0.0.1:$PORT/api/recent?limit=5&$AUTH"
+    check "session"    "http://127.0.0.1:$PORT/api/session?$AUTH"
+    ;;
+  open)
+    check "summary"    "http://127.0.0.1:$PORT/api/summary?days=7"
+    check "chart"      "http://127.0.0.1:$PORT/api/chart?days=7&group=model"
+    check "latency"    "http://127.0.0.1:$PORT/api/latency?days=7&group=model"
+    check "recent"     "http://127.0.0.1:$PORT/api/recent?limit=5"
+    check "session"    "http://127.0.0.1:$PORT/api/session"
+    ;;
+esac
 
 if [ "$fail" -ne 0 ]; then
   echo "== deploy smoke FAILED"
