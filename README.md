@@ -71,11 +71,46 @@ It listens on `0.0.0.0:34998` by default; override with `PORT` / `HOST`.
 The database is opened read-only, so the dashboard can run as an unprivileged
 user as long as it can read the file.
 
-The unit below binds to localhost (`HOST=127.0.0.1`) — the dashboard has no
-authentication, so don't expose it beyond the host unless something in front
-of it (reverse proxy with auth, an SSH tunnel, etc.) provides access control.
+### 3. Authentication
 
-### 3. (Optional) systemd user unit
+Three modes, controlled entirely by env:
+
+| `LITELLM_DASH_TOKEN` | `LITELLM_DASH_USER` + `LITELLM_DASH_PASSWORD` | Behaviour |
+|---|---|---|
+| unset | unset | **open** — LAN/localhost only |
+| set | unset | shared-secret gate (`?token=` / Bearer) |
+| any | set | **login screen + session cookie**; token also accepted |
+
+Public exposure (e.g. through a Cloudflare tunnel) requires the user/pass
+mode:
+
+```bash
+# in the deploy dir's .env (auto-loaded by Bun) or systemd Environment= lines
+LITELLM_DASH_USER=admin
+LITELLM_DASH_PASSWORD=<plaintext>
+LITELLM_DASH_SESSION_TTL_DAYS=30        # remember-me lifetime, 1..365
+# optional: LITELLM_DASH_SESSION_SECRET — manual HMAC key (else derived
+# from the password hash; changing the password logs everyone out)
+# legacy: LITELLM_DASH_TOKEN — programmatic ?token=/Bearer fallback
+```
+
+How it works and why it's safe to expose:
+
+- The password is argon2id-hashed in memory at boot; nothing is written to
+  disk. Login POSTs go to `/api/login`, rate-limited to 5 failed attempts /
+  15 min / IP (`429` after that).
+- Sessions are HMAC-SHA256-signed tokens with an embedded, server-checked
+  expiry, carried in an `HttpOnly`, `SameSite=Lax` cookie (`Secure` too when
+  served over HTTPS). "Remember me" keeps the cookie for
+  `LITELLM_DASH_SESSION_TTL_DAYS` days (default 30); unchecked, it's a
+  browser-session cookie (server-side validity 12h).
+- The HTML shell stays public — it's identical to the public repo and
+  contains no data; everything sensitive lives behind the gated `/api/*`
+  routes. Changing the password (restart) invalidates every issued session.
+- Client-side, the SPA shows a login form whenever an API call gets a 401
+  and works without JS too (native form POST → redirect → cookie set).
+
+### 4. (Optional) systemd user unit
 
 ```ini
 [Unit]
@@ -103,21 +138,36 @@ WantedBy=default.target
 | `/api/latency?days=7&group=model` | per-group request count, avg and p95 duration over successful requests |
 | `/api/export.csv?days=7` | CSV of all logged requests in the window |
 | `/api/recent?limit=50&before_id=<id>` | latest logged requests — `{ rows, hasMore }`, keyset-paged; `before_id` = last row id already shown (max 200 per page) |
+| `POST /api/login` | form-encoded `username`/`password`(+`remember`) → 303 + `dash_session` cookie; 401 on bad credentials, 429 when rate-limited |
+| `POST /api/logout` | clears the session cookie |
+| `/api/session` | `{ authenticated: true }` or 401 — the SPA's auth probe |
 
 ## Notes
 
 - `bash scripts/deploy.sh` syncs the repo to the systemd deploy copy,
-  restarts the unit, and smoke-checks the live endpoints. `bun test` runs
-  the API test suite against a seeded temp DB.
+  restarts the unit, and smoke-checks the live endpoints (log in first when
+  user/pass auth is configured). `bun test` runs the API + auth test suites
+  against seeded temp DBs.
 
-- No authentication is built in — the default unit binds to localhost
-  (`HOST=127.0.0.1`); if you must expose it, put a reverse proxy with auth in
-  front.
+- In open/token mode nothing changed; in user/pass mode all `/api/*` routes
+  accept a valid session cookie **and** the legacy `?token=`/Bearer header.
 - The SQLite file is written by the LiteLLM process; if LiteLLM runs as
   root in a container with a bind-mounted data dir, host-side reads may
   need appropriate permissions (the WAL sidecar files too).
 - Not affiliated with LiteLLM or Cursor; the UI is just inspired by
   Cursor's usage page.
+
+### Authentication schema reference
+
+All optional; see "3. Authentication" above for behaviour per mode.
+
+| Variable | Meaning | Default |
+|---|---|---|
+| `LITELLM_DASH_USER` | login username | unset (open) |
+| `LITELLM_DASH_PASSWORD` | login password (argon2id-hashed in memory at boot) | unset |
+| `LITELLM_DASH_SESSION_TTL_DAYS` | remember-me cookie lifetime (1–365) | `30` |
+| `LITELLM_DASH_SESSION_SECRET` | manual HMAC key — else derived from the password hash | derived |
+| `LITELLM_DASH_TOKEN` | legacy `?token=`/Bearer gate, still honoured alongside login | unset |
 
 ## License
 
