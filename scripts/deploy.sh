@@ -24,7 +24,7 @@ JAR="$(mktemp)"
 trap 'rm -f "$JAR"' EXIT
 
 echo "== syncing $REPO -> $DEPLOY_DIR"
-rsync -a --delete --exclude .git --exclude node_modules --exclude data \
+rsync -a --delete --exclude .git --exclude node_modules --exclude data --exclude .env \
   "$REPO/" "$DEPLOY_DIR/"
 
 echo "== restarting $UNIT"
