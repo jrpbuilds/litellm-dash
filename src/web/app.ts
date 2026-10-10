@@ -511,6 +511,7 @@ function renderRecent() {
     <th class="num">Tokens</th><th class="num">Input</th><th class="num">Output</th>
     <th class="num">Duration</th>
   </tr></thead>`;
+  const isMobile = window.matchMedia("(max-width: 640px)").matches;
   const body = recentState.rows
     .map((r) => {
       const type = r.call_type === "acompletion" || r.call_type === "completion" ? "chat" : r.call_type ?? "—";
@@ -526,7 +527,14 @@ function renderRecent() {
           ? `<tr class="errrow"><td colspan="7"><pre class="errmsg">${esc(r.error ?? "no error text recorded")}</pre></td></tr>`
           : "";
       const group = periodState.group === "provider" ? (r.provider ?? "unknown") : r.model;
-      return `<tr class="${failed ? "failed" : ""}">
+      // Mobile: hidden columns carry the detail — a tap on the row expands a
+      // detail panel (chip, type, input/output split, error, agent meta).
+      const rowCls = `rowmain${failed ? " failed" : ""}${isMobile ? " tappable" : ""}`;
+      const mobileDetail =
+        isMobile && recentState.expanded.has(r.id)
+          ? `<tr class="mobilerow"><td colspan="7">${detailCard(r, type, typePill, tokens, group)}</td></tr>`
+          : "";
+      return `<tr class="${rowCls}" data-row="${r.id}"${isMobile ? ' tabindex="0" role="button" aria-expanded="' + (recentState.expanded.has(r.id) ? "true" : "false") + '"' : ""}>
       <td class="mut">${fmtLogDate(r.ts)}</td>
       <td>${expandBtn}</td>
       <td class="name">${esc(r.model)}${r.provider ? providerChip(r.provider) : ""}</td>
@@ -534,7 +542,7 @@ function renderRecent() {
       <td class="num mut">${r.prompt_tokens ? fmtTokens(r.prompt_tokens) : "–"}</td>
       <td class="num mut">${r.completion_tokens ? fmtTokens(r.completion_tokens) : "–"}</td>
       <td class="num">${latencyCell(r.duration_ms, recentState.latency, group)}</td>
-    </tr>` + errRow;
+    </tr>` + errRow + mobileDetail;
     })
     .join("");
   const emptyMsg = recentState.failuresOnly
@@ -550,6 +558,39 @@ function renderRecent() {
       body || `<tr><td colspan="7" class="empty">${emptyMsg}</td></tr>`
     }</tbody>` +
     foot;
+}
+
+/**
+ * Mobile detail panel for an expanded request row: everything the hidden
+ * columns carried (type, provider chip, input/output split) plus agent
+ * metadata, rendered as a small stat grid + optional error block.
+ */
+function detailCard(
+  r: RecentRow,
+  type: string,
+  typePill: string,
+  tokens: number,
+  group: string,
+): string {
+  const failed = r.status !== "success";
+  const stats: { label: string; value: string }[] = [
+    { label: "Type", value: esc(typePill) },
+    { label: "Provider", value: r.provider ? esc(r.provider) : "unknown" },
+    { label: "Upstream", value: r.upstream_model ? esc(r.upstream_model) : "—" },
+    { label: "Input tokens", value: r.prompt_tokens ? fmtTokens(r.prompt_tokens) : "–" },
+    { label: "Output tokens", value: r.completion_tokens ? fmtTokens(r.completion_tokens) : "–" },
+    { label: "Total tokens", value: tokens ? fmtTokens(tokens) : "–" },
+    { label: "Duration", value: r.duration_ms != null ? fmtDur(r.duration_ms) : "–" },
+    { label: "Status", value: failed ? "failed" : "success" },
+  ];
+  return `<div class="detailcard">
+    <div class="d-head">${esc(r.model)}${r.provider ? providerChip(r.provider) : ""}</div>
+    <div class="d-grid">${stats
+      .map((s) => `<div class="d-item"><span class="d-label">${s.label}</span><span class="d-value">${s.value}</span></div>`)
+      .join("")}</div>
+    ${failed ? `<pre class="errmsg">${esc(r.error ?? "no error text recorded")}</pre>` : ""}
+    <div class="d-meta">${esc(r.user_agent ?? "")}</div>
+  </div>`;
 }
 
 /** Append the next PAGE_SIZE older requests below what's already shown. */
@@ -690,14 +731,34 @@ $("recent").addEventListener("click", (e) => {
     if (recentState.expanded.has(id)) recentState.expanded.delete(id);
     else recentState.expanded.add(id);
     renderRecent();
+    return;
+  }
+  // Mobile: tapping anywhere on a row expands its detail card.
+  const row = t.closest("tr.rowmain.tappable");
+  if (row) {
+    const id = Number((row as HTMLElement).dataset.row);
+    if (recentState.expanded.has(id)) recentState.expanded.delete(id);
+    else recentState.expanded.add(id);
+    renderRecent();
   }
 });
 $("recent").addEventListener("keydown", (e) => {
-  if ((e as KeyboardEvent).key !== "Enter" && (e as KeyboardEvent).key !== " ") return;
-  const errPill = (e.target as HTMLElement).closest("[data-err]");
+  const key = (e as KeyboardEvent).key;
+  if (key !== "Enter" && key !== " ") return;
+  const t = e.target as HTMLElement;
+  const errPill = t.closest("[data-err]");
   if (errPill) {
     e.preventDefault();
     const id = Number((errPill as HTMLElement).dataset.err);
+    if (recentState.expanded.has(id)) recentState.expanded.delete(id);
+    else recentState.expanded.add(id);
+    renderRecent();
+    return;
+  }
+  const row = t.closest("tr.rowmain.tappable");
+  if (row) {
+    e.preventDefault();
+    const id = Number((row as HTMLElement).dataset.row);
     if (recentState.expanded.has(id)) recentState.expanded.delete(id);
     else recentState.expanded.add(id);
     renderRecent();

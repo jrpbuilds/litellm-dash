@@ -508,7 +508,8 @@ tbody tr:hover {
 /* Mobile: the usage log has 7 columns and doesn't fit a phone viewport —
    drop Type (redundant with the stream pill on desktop, and chat-stream
    nuance matters less on small screens), Input/Output (keep Total), and
-   the provider chip, so rows read on one line. */
+   the provider chip, so rows read on one line. A tap on the row expands
+   an inline detail card carrying everything that was hidden. */
 @media (max-width: 640px) {
   #recent th:nth-child(2),
   #recent td:nth-child(2),
@@ -521,6 +522,108 @@ tbody tr:hover {
   #recent .chip {
     display: none;
   }
+}
+
+/* Mobile expandable rows: affordance + detail card */
+@media (max-width: 640px) {
+  tr.rowmain.tappable {
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  tr.rowmain.tappable td:first-child {
+    position: relative;
+  }
+  /* subtle chevron after the date — signals expandability, flips when open */
+  tr.rowmain.tappable td:first-child::after {
+    content: "›";
+    display: inline-block;
+    margin-left: 6px;
+    color: var(--muted);
+    font-size: 13px;
+    transition: transform 0.18s ease;
+    transform-origin: 50% 50%;
+  }
+  tr.rowmain.tappable[aria-expanded="true"] td:first-child::after {
+    transform: rotate(90deg);
+  }
+  tr.rowmain.tappable:active {
+    background: rgba(255, 255, 255, 0.05);
+  }
+  tr.mobilerow > td {
+    border-bottom: 1px solid rgba(38, 38, 44, 0.7);
+    padding: 0 10px 12px;
+  }
+}
+
+/* The detail card itself (shared visuals, mobile-only placement) */
+.detailcard {
+  background: var(--bg);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  animation: detailin 0.18s ease;
+}
+@keyframes detailin {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .detailcard {
+    animation: none;
+  }
+}
+.detailcard .d-head {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.detailcard .d-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 14px;
+}
+.detailcard .d-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.detailcard .d-label {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+.detailcard .d-value {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.detailcard .d-meta {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--card-border);
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.detailcard .errmsg {
+  margin-top: 10px;
 }
 .chip-tt {
   margin-left: 6px;
