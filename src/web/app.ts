@@ -181,6 +181,7 @@ type RecentRow = {
   duration_ms: number | null;
   status: string;
   user_agent: string | null;
+  requester_ip?: string | null;
   error?: string | null;
 };
 
@@ -446,6 +447,7 @@ function renderChart(c: ChartResp) {
 /** Attach hover/click selection on the chart canvas. */
 function wireChartHover() {
   const canvas = $<HTMLCanvasElement>("chart");
+  if (!canvas) return; // login page has no chart
   const plot = canvas.parentElement as HTMLElement;
 
   const bucketAt = (clientX: number): number | null => {
@@ -562,9 +564,29 @@ function renderRecent() {
 }
 
 /**
- * Mobile detail panel for an expanded request row: everything the hidden
- * columns carried (type, provider chip, input/output split) plus agent
- * metadata, rendered as a small stat grid + optional error block.
+ * Friendly client name derived from the recorded user_agent + requester_ip.
+ * The gateway sees the LiteLLM proxy's internal callers: OpenCode and Hermes
+ * share one docker IP, Cursor comes through its own. Falls back to the raw
+ * UA string when nothing better matches.
+ */
+const CLIENT_NAMES: { test: RegExp; name: string }[] = [
+  { test: /^AsyncOpenAI\/Python|openai\/python/i, name: "OpenAI SDK (async)" },
+  { test: /^OpenAI\/Python/i, name: "OpenAI SDK" },
+  { test: /^Cursor/i, name: "Cursor" },
+  { test: /aiohttp/i, name: "aiohttp client" },
+  { test: /^curl/i, name: "curl" },
+];
+function clientName(ua: string | null, ip: string | null): string {
+  if (!ua) return "unknown client";
+  const base = ua.split("(")[0].trim();
+  const hit = CLIENT_NAMES.find((c) => c.test.test(base));
+  return hit ? hit.name : base || "unknown client";
+}
+
+/**
+ * Detail panel for an expanded request row: everything the hidden columns
+ * carried (type, provider chip, input/output split), the calling client,
+ * plus optional error block.
  */
 function detailCard(
   r: RecentRow,
@@ -609,7 +631,11 @@ function detailCard(
       <div class="d-item"><span class="d-label">Status</span>${statusPill}</div>
     </div>
     ${failed ? `<pre class="errmsg">${esc(r.error ?? "no error text recorded")}</pre>` : ""}
-    <div class="d-meta">${esc(r.user_agent ?? "")}</div>
+    <div class="d-client">
+      <span class="d-label">Client</span>
+      <span class="d-client-name">${esc(clientName(r.user_agent, r.requester_ip ?? null))}</span>
+      <span class="d-meta">${esc(r.user_agent ?? "")}${r.requester_ip ? ` · ${esc(r.requester_ip)}` : ""}</span>
+    </div>
   </div>`;
 }
 
@@ -737,7 +763,9 @@ document.querySelectorAll("#periods button").forEach((b) =>
 );
 const groupDD = $("groupdd");
 const groupMenu = $("groupdd-menu");
+if (groupDD && groupMenu) {
 const setGroupUI = (group: "model" | "provider") => {
+  if (!groupDD || !groupMenu) return;
   $("groupdd-value").textContent = group === "provider" ? "Provider" : "Model";
   groupMenu.querySelectorAll("button").forEach((b) => {
     const on = (b as HTMLElement).dataset.group === group;
@@ -770,10 +798,11 @@ document.addEventListener("keydown", (e) => {
     groupDD.setAttribute("aria-expanded", "false");
   }
 });
+}
 window.addEventListener("resize", () => lastChart && renderChart(lastChart));
 wireChartHover();
 // delegation — the buttons are re-rendered whenever the table updates
-$("recent").addEventListener("click", (e) => {
+if ($("recent")) $("recent").addEventListener("click", (e) => {
   const t = e.target as HTMLElement;
   if (t.closest("#loadmore")) loadMore();
   const errPill = t.closest("[data-err]");
@@ -793,7 +822,7 @@ $("recent").addEventListener("click", (e) => {
     renderRecent();
   }
 });
-$("recent").addEventListener("keydown", (e) => {
+if ($("recent")) $("recent").addEventListener("keydown", (e) => {
   const key = (e as KeyboardEvent).key;
   if (key !== "Enter" && key !== " ") return;
   const t = e.target as HTMLElement;

@@ -330,7 +330,7 @@ function recent(limitRaw: string | null, beforeIdRaw: string | null, statusRaw: 
     q<Row>(
       `SELECT id, ts, COALESCE(model_group, model) AS model, upstream_model, provider,
               call_type, stream, prompt_tokens, completion_tokens, total_tokens,
-              duration_ms, status, user_agent, error
+              duration_ms, status, user_agent, requester_ip, error
        FROM requests
        WHERE ${failuresOnly ? "status != 'success' AND " : ""}${hasBefore ? "id < ?" : "1=1"}
        ORDER BY id DESC
