@@ -319,20 +319,33 @@ function exportCsv(days: number): Response {
  * Latest requests, newest first. Keyset pagination on the autoincrement id —
  * pass `before_id` (the id of the last row already shown) to page further
  * back. Stable even while new requests land, unlike offset pagination.
- * `status=failure` restricts the page to failed requests.
+ * `status=failure` restricts the page to failed requests; `vision=1` to
+ * image-input requests.
  */
-function recent(limitRaw: string | null, beforeIdRaw: string | null, statusRaw: string | null) {
+function recent(
+  limitRaw: string | null,
+  beforeIdRaw: string | null,
+  statusRaw: string | null,
+  visionRaw: string | null,
+) {
   const limit = Math.min(200, Math.max(1, Number(limitRaw) || 50));
   const beforeId = Number(beforeIdRaw);
   const hasBefore = Number.isFinite(beforeId) && beforeId > 0;
   const failuresOnly = statusRaw === "failure";
+  const visionOnly = visionRaw === "1";
+  const clauses = [
+    failuresOnly ? "status != 'success'" : "",
+    visionOnly ? "vision = 1" : "",
+    hasBefore ? "id < ?" : "",
+  ].filter(Boolean);
+  const where = clauses.length ? clauses.join(" AND ") : "1=1";
   const rows =
     q<Row>(
       `SELECT id, ts, COALESCE(model_group, model) AS model, upstream_model, provider,
               call_type, stream, prompt_tokens, completion_tokens, total_tokens,
               duration_ms, status, user_agent, requester_ip, vision, error
        FROM requests
-       WHERE ${failuresOnly ? "status != 'success' AND " : ""}${hasBefore ? "id < ?" : "1=1"}
+       WHERE ${where}
        ORDER BY id DESC
        LIMIT ?`,
       ...(hasBefore ? [beforeId] : []),
@@ -462,6 +475,7 @@ const server = serve({
           u.searchParams.get("limit"),
           u.searchParams.get("before_id"),
           u.searchParams.get("status"),
+          u.searchParams.get("vision"),
         ),
       );
     }),

@@ -96,17 +96,47 @@ def _number(value: Any) -> int:
 
 
 def _vision_requested(messages: Any) -> int:
-    """1 when any message carries multimodal image content.
+    """1 when any message carries a multimodal image PART.
 
-    Most gateways pass the request body through as-is (a list of dicts with
-    "content: [{type: image_url,...}]" or a JSON string for some proxies)
-    without dict-hashing the whole body as a str — Cheap last-resort scan
-    for the image markers, bounded so huge bodies don't stall the logger.
+    Strict structural walk: a part only counts when its content block is a
+    dict/list explicitly typed image ({type: image_url}, {type: input_image}
+    or {type: image_url} inside a JSON-encoded string a proxy passes
+    through). Plain text that merely MENTIONS image_url (tool schemas, docs
+    pasted into the prompt) must not flag the row.
     """
     if not messages:
         return 0
-    text = messages if isinstance(messages, str) else json.dumps(messages, default=str)
-    return 1 if _IMAGE_MARKERS.search(text[:1_000_000]) else 0
+    if isinstance(messages, str):
+        # Some proxies hand the body over as a JSON string; parse it back so
+        # the structural walk still applies (fall back to marker scan).
+        try:
+            messages = json.loads(messages)
+        except Exception:
+            return 1 if _IMAGE_MARKERS.search(messages[:1_000_000]) else 0
+    if _has_image_part(messages, depth=0):
+        return 1
+    return 0
+
+
+_MAX_WALK = 200_000
+
+
+def _has_image_part(node: Any, depth: int) -> bool:
+    """Depth-limited structural search for typed image content parts."""
+    if depth > 6:
+        return False
+    if isinstance(node, dict):
+        t = node.get("type")
+        if t in ("image_url", "input_image", "image"):
+            return True
+        if len(node) > 64:  # guard: ignore giant non-message dicts
+            return False
+        return any(_has_image_part(v, depth + 1) for v in node.values())
+    if isinstance(node, list):
+        if len(node) > _MAX_WALK:
+            node = node[:_MAX_WALK]
+        return any(_has_image_part(v, depth + 1) for v in node)
+    return False
 
 
 class SQLiteUsageLogger(CustomLogger):

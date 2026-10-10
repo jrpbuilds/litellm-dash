@@ -506,8 +506,9 @@ const recentState: {
   hasMore: boolean;
   loadingMore: boolean;
   failuresOnly: boolean;
+  visionOnly: boolean;
   latency: LatencyResp | null;
-} = { rows: [], hasMore: false, loadingMore: false, failuresOnly: false, latency: null };
+} = { rows: [], hasMore: false, loadingMore: false, failuresOnly: false, visionOnly: false, latency: null };
 
 function renderRecent() {
   const head = `<thead><tr>
@@ -662,6 +663,7 @@ function recentUrl(limit: number, beforeId?: number): string {
   const p = new URLSearchParams({ limit: String(limit) });
   if (beforeId != null) p.set("before_id", String(beforeId));
   if (recentState.failuresOnly) p.set("status", "failure");
+  if (recentState.visionOnly) p.set("vision", "1");
   return `/api/recent?${p}`;
 }
 
@@ -850,6 +852,15 @@ document.querySelectorAll("#logfilter button").forEach((b) =>
     setFailuresOnly((b as HTMLElement).dataset.filter === "failures"),
   ),
 );
+
+// Vision-only toggle: a third log-filter state alongside All/Failures.
+const visionBtn = document.querySelector<HTMLButtonElement>("#visionfilter");
+visionBtn?.addEventListener("click", () => {
+  recentState.visionOnly = !recentState.visionOnly;
+  visionBtn.classList.toggle("active", recentState.visionOnly);
+  expandedId = null;
+  refreshLog();
+});
 
 // ------------------------------------------------- login/logout wiring
 

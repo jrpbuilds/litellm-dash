@@ -821,6 +821,10 @@ tr.mobilerow > td {
   background: #262626;
   color: var(--text);
 }
+.visionfilter.active {
+  background: #262626;
+  color: var(--text);
+}
 .pill.clickable {
   cursor: pointer;
 }
