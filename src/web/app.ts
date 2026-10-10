@@ -728,12 +728,17 @@ const wireLoginForm = (form: HTMLFormElement) => {
     const r = await fetch("/api/login", { method: "POST", body });
     if (r.ok) {
       location.assign("/");
-    } else {
+    } else if (r.status === 429) {
       if (msg)
-        msg.textContent =
-          r.status === 429
-            ? "Too many attempts — try again in 15 minutes."
-            : "Invalid username or password.";
+        msg.textContent = "Too many attempts — try again in 15 minutes.";
+    } else if (r.status === 401) {
+      if (msg)
+        msg.textContent = "Invalid username or password.";
+    } else {
+      // Unexpected server error (the raw JSON body would render if the
+      // native form took over) — show a friendly message instead.
+      if (msg)
+        msg.textContent = "Sign-in failed — server error. Try again shortly.";
     }
   });
 };
