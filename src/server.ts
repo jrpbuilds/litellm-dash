@@ -326,16 +326,13 @@ function recent(
   limitRaw: string | null,
   beforeIdRaw: string | null,
   statusRaw: string | null,
-  visionRaw: string | null,
 ) {
   const limit = Math.min(200, Math.max(1, Number(limitRaw) || 50));
   const beforeId = Number(beforeIdRaw);
   const hasBefore = Number.isFinite(beforeId) && beforeId > 0;
   const failuresOnly = statusRaw === "failure";
-  const visionOnly = visionRaw === "1";
   const clauses = [
     failuresOnly ? "status != 'success'" : "",
-    visionOnly ? "vision = 1" : "",
     hasBefore ? "id < ?" : "",
   ].filter(Boolean);
   const where = clauses.length ? clauses.join(" AND ") : "1=1";
@@ -475,7 +472,6 @@ const server = serve({
           u.searchParams.get("limit"),
           u.searchParams.get("before_id"),
           u.searchParams.get("status"),
-          u.searchParams.get("vision"),
         ),
       );
     }),

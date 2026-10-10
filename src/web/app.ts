@@ -506,9 +506,10 @@ const recentState: {
   hasMore: boolean;
   loadingMore: boolean;
   failuresOnly: boolean;
-  visionOnly: boolean;
+  /** how many tail rows arrived in the last append (entry animation) */
+  appendCount: number;
   latency: LatencyResp | null;
-} = { rows: [], hasMore: false, loadingMore: false, failuresOnly: false, visionOnly: false, latency: null };
+} = { rows: [], hasMore: false, loadingMore: false, failuresOnly: false, appendCount: 0, latency: null };
 
 function renderRecent() {
   const head = `<thead><tr>
@@ -518,7 +519,7 @@ function renderRecent() {
   </tr></thead>`;
   const isMobile = window.matchMedia("(max-width: 640px)").matches;
   const body = recentState.rows
-    .map((r) => {
+    .map((r, i) => {
       const type = r.call_type === "acompletion" || r.call_type === "completion" ? "chat" : r.call_type ?? "—";
       const typePill = r.stream ? "chat · stream" : type;
       const tokens = r.total_tokens ?? r.prompt_tokens + r.completion_tokens;
@@ -531,7 +532,11 @@ function renderRecent() {
       const group = periodState.group === "provider" ? (r.provider ?? "unknown") : r.model;
       // Mobile: hidden columns carry the detail — a tap on the row expands a
       // detail panel (chip, type, input/output split, error, agent meta).
-      const rowCls = `rowmain${failed ? " failed" : ""} tappable`;
+      const idx = i;
+      const isAppended =
+        recentState.appendCount > 0 &&
+        idx >= recentState.rows.length - recentState.appendCount;
+      const rowCls = `rowmain${failed ? " failed" : ""} tappable${isAppended ? " rowin" : ""}`;
       // The expanded detail card renders on every screen size now; on
       // desktop it appears in place of (and for failures, in addition to)
       // the old errrow treatment.
@@ -563,6 +568,7 @@ function renderRecent() {
       body || `<tr><td colspan="7" class="empty">${emptyMsg}</td></tr>`
     }</tbody>` +
     foot;
+  recentState.appendCount = 0;
 }
 
 /**
@@ -651,6 +657,7 @@ async function loadMore() {
   renderRecent();
   const resp = await getJson<RecentResp>(recentUrl(PAGE_SIZE, lastId));
   if (resp) {
+    recentState.appendCount = resp.rows.length; // mark new rows for entry animation
     recentState.rows = [...recentState.rows, ...resp.rows];
     recentState.hasMore = resp.hasMore;
   }
@@ -663,7 +670,6 @@ function recentUrl(limit: number, beforeId?: number): string {
   const p = new URLSearchParams({ limit: String(limit) });
   if (beforeId != null) p.set("before_id", String(beforeId));
   if (recentState.failuresOnly) p.set("status", "failure");
-  if (recentState.visionOnly) p.set("vision", "1");
   return `/api/recent?${p}`;
 }
 
@@ -714,6 +720,8 @@ function mergeRecent(fresh: RecentResp) {
 
 async function refresh() {
   const days = periodState.days;
+  const chartCard = document.querySelector<HTMLElement>(".chartcard");
+  if (chartCard && !lastChart) chartCard.classList.add("skel");
   const [s, c, lat, r] = await Promise.all([
     getJson<Summary>(`/api/summary?days=${days}`),
     getJson<ChartResp>(`/api/chart?days=${days}&group=${periodState.group}`),
@@ -721,7 +729,10 @@ async function refresh() {
     getJson<RecentResp>(recentUrl(PAGE_SIZE)),
   ]);
   if (s) renderCards(s);
-  if (c) renderChart(c);
+  if (c) {
+    renderChart(c);
+    chartCard?.classList.remove("skel");
+  }
   if (r) mergeRecent(r);
   // latency feeds the duration hovers — store it, then make sure any
   // already-rendered rows pick it up
@@ -852,15 +863,6 @@ document.querySelectorAll("#logfilter button").forEach((b) =>
     setFailuresOnly((b as HTMLElement).dataset.filter === "failures"),
   ),
 );
-
-// Vision-only toggle: a third log-filter state alongside All/Failures.
-const visionBtn = document.querySelector<HTMLButtonElement>("#visionfilter");
-visionBtn?.addEventListener("click", () => {
-  recentState.visionOnly = !recentState.visionOnly;
-  visionBtn.classList.toggle("active", recentState.visionOnly);
-  expandedId = null;
-  refreshLog();
-});
 
 // ------------------------------------------------- login/logout wiring
 

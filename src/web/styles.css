@@ -39,6 +39,17 @@ body {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  animation: pagein 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes pagein {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* --- page head: title + period pills ------------------------------- */
@@ -131,6 +142,24 @@ h1 {
   border: 0;
   border-radius: 10px;
   padding: 14px 16px;
+  transition: background 0.15s ease;
+}
+.cards .card {
+  animation: cardin 0.3s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+.cards .card:nth-child(1) { animation-delay: 0.02s; }
+.cards .card:nth-child(2) { animation-delay: 0.07s; }
+.cards .card:nth-child(3) { animation-delay: 0.12s; }
+.cards .card:nth-child(4) { animation-delay: 0.17s; }
+@keyframes cardin {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 .statcard .label {
   color: #c9c9c9;
@@ -142,6 +171,7 @@ h1 {
   font-variant-numeric: tabular-nums;
   margin-top: 3px;
   letter-spacing: -0.01em;
+  transition: opacity 0.25s ease;
 }
 .statcard .value.ok {
   color: var(--ok);
@@ -243,6 +273,11 @@ h1 {
 .chartcard {
   padding: 18px;
 }
+.chartcard.skel .chartwrap {
+  filter: blur(0.4px);
+  opacity: 0.5;
+  pointer-events: none;
+}
 .chartwrap {
   display: flex;
   gap: 8px;
@@ -327,6 +362,7 @@ h1 {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
   z-index: 5;
   pointer-events: none;
+  transition: opacity 0.14s ease, transform 0.14s ease;
 }
 .tooltip .t-date {
   font-weight: 600;
@@ -393,6 +429,10 @@ h1 {
 }
 .btn:hover {
   background: rgba(255, 255, 255, 0.05);
+  border-color: #3a3a3a;
+}
+.btn:active {
+  transform: translateY(1px);
 }
 
 
@@ -907,7 +947,8 @@ tr.errrow > td {
 .empty {
   color: var(--muted);
   text-align: center;
-  padding: 22px !important;
+  padding: 26px !important;
+  font-size: 13px;
 }
 
 td.loadmore {
@@ -979,6 +1020,7 @@ footer a {
   height: 14px;
   width: 70%;
   border-radius: 6px;
+  border: 0;
   background: linear-gradient(
     100deg,
     rgba(255, 255, 255, 0.05) 40%,
@@ -999,6 +1041,11 @@ footer a {
 tr.skelrow td {
   padding: 12px 10px;
 }
+tr.skelrow:nth-child(2) .skelbar { animation-delay: 0.06s; }
+tr.skelrow:nth-child(3) .skelbar { animation-delay: 0.12s; }
+tr.skelrow:nth-child(4) .skelbar { animation-delay: 0.18s; }
+tr.skelrow:nth-child(5) .skelbar { animation-delay: 0.24s; }
+tr.skelrow:nth-child(6) .skelbar { animation-delay: 0.30s; }
 tr.skelrow .skelbar {
   height: 12px;
 }
@@ -1014,5 +1061,29 @@ tr.skelrow .skelbar {
   .skelbar {
     animation: none;
     background: rgba(255, 255, 255, 0.07);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Appended (load-more) rows slide in from below */
+tr.rowmain.rowin {
+  animation: appendin 0.3s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+@keyframes appendin {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
