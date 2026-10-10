@@ -339,9 +339,74 @@ h1 {
   font-size: 12px;
   text-decoration: none;
   flex: none;
+  cursor: pointer;
+  font-family: inherit;
 }
 .btn:hover {
   background: rgba(255, 255, 255, 0.09);
+}
+
+/* --- login view ------------------------------------------------------ */
+.loginpage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  max-width: none;
+  padding: 20px;
+}
+.loginform {
+  width: min(340px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px;
+}
+.loginform h1 {
+  font-size: 22px;
+  margin: 0;
+  display: block;
+}
+.loginform .pagesub {
+  margin: 4px 0 6px;
+}
+.loginform input {
+  background: var(--bg);
+  border: 1px solid var(--card-border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-family: inherit;
+}
+.loginform input:focus {
+  outline: 1px solid var(--ok);
+  border-color: var(--ok);
+}
+.loginform .remember {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.loginbtn {
+  background: var(--ok);
+  color: #0e0e10;
+  border: 0;
+  font-weight: 600;
+  padding: 10px;
+  font-size: 13px;
+}
+.loginbtn:hover {
+  background: #5adba4;
+}
+.loginmsg {
+  color: var(--bad);
+  font-size: 12px;
+  min-height: 18px;
 }
 
 .tablewrap {

@@ -7,7 +7,19 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <main class="page">
+    <!-- login view: hidden until a 401 flips it on -->
+    <main class="page loginpage" id="loginview" hidden>
+      <form class="card loginform" id="loginform" method="post" action="/api/login">
+        <h1>Gateway Usage</h1>
+        <p class="pagesub">Sign in to see your LiteLLM usage.</p>
+        <input name="username" placeholder="Username" autocomplete="username" required />
+        <input name="password" type="password" placeholder="Password" autocomplete="current-password" required />
+        <label class="remember"><input type="checkbox" name="remember" /> Remember me for 30 days</label>
+        <div class="loginmsg" id="loginmsg"></div>
+        <button class="btn loginbtn" type="submit">Sign in</button>
+      </form>
+    </main>
+    <main class="page" id="dashboard">
       <header class="pagehead">
         <div class="headleft">
           <h1><span class="statusdot" id="statusdot"></span>Gateway Usage</h1>
@@ -17,6 +29,9 @@
           <button data-days="1">1d</button>
           <button data-days="7" class="active">7d</button>
           <button data-days="30">30d</button>
+        </div>
+        <div class="headactions">
+          <button class="btn" id="logoutbtn" title="Sign out">Sign out</button>
         </div>
       </header>
 

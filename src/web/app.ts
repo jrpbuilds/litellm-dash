@@ -97,26 +97,39 @@ function latencyCell(ms: number | null, stats: LatencyResp | null, group: string
 // ---------------------------------------------------------------- auth
 
 /**
- * Shared-secret from the page URL (?token=...), appended to every API call.
- * Empty when the dashboard runs without LITELLM_DASH_TOKEN — the server
- * ignores the param in that case, so behaviour is identical either way.
+ * Session-cookie auth: the server gates /api/*, the browser just needs the
+ * dash_session cookie (set by POST /api/login). Any 401 flips the SPA to the
+ * login view; login/logout POST and re-render, no page reload.
  */
-const TOKEN = new URLSearchParams(location.search).get("token") ?? "";
-
-/** Append the shared secret to a same-origin URL, if one is in play. */
-function withToken(url: string): string {
-  if (!TOKEN || url.startsWith("http")) return url;
-  return url + (url.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(TOKEN);
-}
+const authState = { loggedIn: false };
 
 async function getJson<T>(url: string): Promise<T | null> {
   try {
-    const r = await fetch(withToken(url), { cache: "no-store" });
+    const r = await fetch(url, { cache: "no-store" });
+    if (r.status === 401) {
+      authState.loggedIn = false;
+      showLogin();
+      return null;
+    }
     if (!r.ok) return null;
+    authState.loggedIn = true;
     return (await r.json()) as T;
   } catch {
     return null;
   }
+}
+
+// ------------------------------------------------------------- login view
+
+function showLogin() {
+  $("dashboard").hidden = true;
+  $("loginview").hidden = false;
+}
+
+function showDashboard() {
+  $("loginview").hidden = true;
+  $("dashboard").hidden = false;
+  refresh();
 }
 
 // ---------------------------------------------------------------- types
@@ -616,7 +629,7 @@ async function refresh() {
     recentState.latency = lat;
     if (firstLatency) renderRecent();
   }
-  $("export").setAttribute("href", withToken(`/api/export.csv?days=${days}`));
+  $("export").setAttribute("href", `/api/export.csv?days=${days}`);
   $("updated").textContent = !s
     ? "api unreachable"
     : s.dbAvailable
@@ -685,6 +698,37 @@ document.querySelectorAll("#logfilter button").forEach((b) =>
     setFailuresOnly((b as HTMLElement).dataset.filter === "failures"),
   ),
 );
+
+// ------------------------------------------------- login/logout wiring
+
+$("loginform").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = e.target as HTMLFormElement;
+  const msg = $("loginmsg");
+  msg.textContent = "";
+  const body = new URLSearchParams({
+    username: (f.elements.namedItem("username") as HTMLInputElement).value,
+    password: (f.elements.namedItem("password") as HTMLInputElement).value,
+  });
+  if ((f.elements.namedItem("remember") as HTMLInputElement).checked) {
+    body.set("remember", "on");
+  }
+  const r = await fetch("/api/login", { method: "POST", body });
+  if (r.ok) {
+    showDashboard();
+  } else {
+    msg.textContent =
+      r.status === 429
+        ? "Too many attempts — try again in 15 minutes."
+        : "Invalid username or password.";
+  }
+});
+
+$("logoutbtn").addEventListener("click", async () => {
+  await fetch("/api/logout", { method: "POST" });
+  authState.loggedIn = false;
+  showLogin();
+});
 
 refresh();
 setInterval(refresh, 10_000);
