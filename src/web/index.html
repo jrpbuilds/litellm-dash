@@ -7,8 +7,9 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <!-- login view: hidden until a 401 flips it on -->
-    <main class="page loginpage" id="loginview" hidden>
+    <!-- not used in server-gated mode; login lives at /login and app.ts
+         hides this view immediately on pages that do serve it -->
+    <main class="page loginpage" id="loginview" data-legacy>
       <form class="card loginform" id="loginform" method="post" action="/api/login">
         <h1>Gateway Usage</h1>
         <p class="pagesub">Sign in to see your LiteLLM usage.</p>
@@ -19,7 +20,8 @@
         <button class="btn loginbtn" type="submit">Sign in</button>
       </form>
     </main>
-    <main class="page" id="dashboard">
+    <!-- server-gated: only served when a valid dash_session cookie exists (src/server.ts) -->
+    <main class="page" id="dashboard" hidden>
       <header class="pagehead">
         <div class="headleft">
           <h1><span class="statusdot" id="statusdot"></span>Gateway Usage</h1>

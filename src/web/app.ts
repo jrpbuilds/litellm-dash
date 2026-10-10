@@ -122,14 +122,24 @@ async function getJson<T>(url: string): Promise<T | null> {
 // ------------------------------------------------------------- login view
 
 function showLogin() {
-  $("dashboard").hidden = true;
-  $("loginview").hidden = false;
+  // Sessions are server-enforced: losing one mid-poll bounces to /login,
+  // where the server itself would have redirected.
+  if (location.pathname !== "/login") location.assign("/login");
 }
 
 function showDashboard() {
-  $("loginview").hidden = true;
-  $("dashboard").hidden = false;
+  const dash = $("dashboard");
+  if (dash) dash.hidden = false;
+  wireLogout();
   refresh();
+  startPolling();
+}
+
+/** Single 10s refresh loop; started once, from showDashboard/boot. */
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+function startPolling() {
+  if (pollTimer != null) return;
+  pollTimer = setInterval(refresh, 10_000);
 }
 
 // ---------------------------------------------------------------- types
@@ -701,34 +711,86 @@ document.querySelectorAll("#logfilter button").forEach((b) =>
 
 // ------------------------------------------------- login/logout wiring
 
-$("loginform").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const f = e.target as HTMLFormElement;
-  const msg = $("loginmsg");
-  msg.textContent = "";
-  const body = new URLSearchParams({
-    username: (f.elements.namedItem("username") as HTMLInputElement).value,
-    password: (f.elements.namedItem("password") as HTMLInputElement).value,
+const wireLoginForm = (form: HTMLFormElement) => {
+  if (!form || form.dataset.wired) return;
+  form.dataset.wired = "1";
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const msg = form.querySelector("#loginmsg") as HTMLElement | null;
+    if (msg) msg.textContent = "";
+    const body = new URLSearchParams({
+      username: (form.elements.namedItem("username") as HTMLInputElement).value,
+      password: (form.elements.namedItem("password") as HTMLInputElement).value,
+    });
+    if ((form.elements.namedItem("remember") as HTMLInputElement)?.checked) {
+      body.set("remember", "on");
+    }
+    const r = await fetch("/api/login", { method: "POST", body });
+    if (r.ok) {
+      location.assign("/");
+    } else {
+      if (msg)
+        msg.textContent =
+          r.status === 429
+            ? "Too many attempts — try again in 15 minutes."
+            : "Invalid username or password.";
+    }
   });
-  if ((f.elements.namedItem("remember") as HTMLInputElement).checked) {
-    body.set("remember", "on");
+};
+wireLoginForm($("loginform") as HTMLFormElement);
+
+const wireLogout = () => {
+  const btn = $("logoutbtn");
+  if (!btn || btn.dataset.wired) return;
+  btn.dataset.wired = "1";
+  btn.addEventListener("click", async () => {
+    await fetch("/api/logout", { method: "POST" });
+    authState.loggedIn = false;
+    location.assign("/login");
+  });
+};
+wireLogout();
+
+// ---------------------------------------------------------------- boot
+
+/**
+ * Decide which view to show before any data loads, from one cheap probe:
+ * a valid session cookie → dashboard, otherwise the login form. On /login
+ * this pre-fills wiring only; on / with a session it renders immediately.
+ * The full refresh() only fires after the probe succeeds, and the 10s
+ * poll only starts once signed in.
+ */
+async function boot() {
+  // Server-gated mode: on / the dashboard shell only exists after login, so
+  // the local loginview (if any) is hidden preemptively; on /login there is
+  // no dashboard markup at all.
+  const legacy = $("loginview");
+  if (legacy && location.pathname === "/") legacy.hidden = true;
+  let r: Response | null = null;
+  try {
+    r = await fetch("/api/session", { cache: "no-store" });
+  } catch {
+    r = null;
   }
-  const r = await fetch("/api/login", { method: "POST", body });
-  if (r.ok) {
-    showDashboard();
+  if (r?.ok) {
+    authState.loggedIn = true;
+    // Already signed in and sitting on the login page → go to the app.
+    if (location.pathname === "/login") {
+      location.replace("/");
+      return;
+    }
+    $("dashboard").hidden = false;
+    wireLogout();
+    await refresh();
+    startPolling();
   } else {
-    msg.textContent =
-      r.status === 429
-        ? "Too many attempts — try again in 15 minutes."
-        : "Invalid username or password.";
+    // 401 → keep the login page visible (or bounce there from /).
+    if (location.pathname !== "/login") {
+      location.replace("/login");
+      return;
+    }
+    wireLoginForm($("loginform") as HTMLFormElement);
   }
-});
+}
 
-$("logoutbtn").addEventListener("click", async () => {
-  await fetch("/api/logout", { method: "POST" });
-  authState.loggedIn = false;
-  showLogin();
-});
-
-refresh();
-setInterval(refresh, 10_000);
+boot();

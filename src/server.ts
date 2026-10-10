@@ -6,10 +6,13 @@
  */
 import { serve } from "bun";
 import { Database } from "bun:sqlite";
-import index from "./web/index.html";
+import dashboardIndex from "./web/index.html";
+import loginIndex from "./web/login.html";
 import {
   createSessionToken,
+  decodeToken,
   deriveKey,
+  encodeToken,
   sessionFromCookie,
   verifySessionToken,
 } from "./auth";
@@ -103,7 +106,7 @@ async function handleLogin(req: Request, server: any): Promise<Response> {
   const res = new Response(null, { status: 303, headers: { Location: "/" } });
   res.headers.append(
     "Set-Cookie",
-    `dash_session=${tok}; Path=/; HttpOnly; SameSite=Lax${secure}` +
+    `dash_session=${encodeToken(tok)}; Path=/; HttpOnly; SameSite=Lax${secure}` +
       (remember ? `; Max-Age=${TTL_DAYS * 86400}` : ""),
   );
   return res;
@@ -113,7 +116,7 @@ const handleLogout = (): Response =>
   new Response(null, {
     status: 303,
     headers: {
-      Location: "/",
+      Location: "/login",
       "Set-Cookie": "dash_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
     },
   });
@@ -343,14 +346,14 @@ function recent(limitRaw: string | null, beforeIdRaw: string | null, statusRaw: 
  * Auth gate for /api/* routes. Two modes compose:
  *  - user/pass (LITELLM_DASH_USER + LITELLM_DASH_PASSWORD): a valid signed
  *    `dash_session` cookie authorizes the request.
- *  - shared secret (LITELLM_DASH_TOKEN): `?token=` or `Authorization: Bearer`
+ *  - shared secret (LITELLM_DASH_TOKEN): `?token=` or `Authorization: ***
  *    header, unchanged legacy behaviour that keeps deploy.sh and API clients
  *    working.
  * With neither set, every request passes (open mode).
  */
 const authorized = async (req: Request): Promise<boolean> => {
   if (AUTH_ON) {
-    const tok = sessionFromCookie(req);
+    const tok = decodeToken(sessionFromCookie(req));
     if (tok && (await verifySessionToken(tok, SESSION_SECRET))) return true;
   }
   if (!AUTH_ON && !TOKEN) return true;
@@ -379,12 +382,63 @@ const gate =
       ? handler(req)
       : new Response("unauthorized\n", { status: 401 });
 
+/**
+ * Fallback handler for the server-side page gate. In auth mode the GET /
+ * route is unmapped (`false`) so every anonymous visit lands here: a valid
+ * session re-dispatches to the guarded `/__dash` route (the bundled
+ * dashboard shell), anything else gets a 303 to /login. Anything the route
+ * table did not match (unknown paths) treats the visitor as anonymous —
+ * gated pages stay hidden, everything else 404s.
+ */
+const AuthGate = async (
+  req: Request,
+  server: Parameters<Parameters<typeof serve>[0]["fetch"]>[1],
+): Promise<Response> => {
+  const u = new URL(req.url);
+  const locked = AUTH_ON || !!TOKEN;
+  if (!locked) {
+    // Open mode: everything reaches the dashboard directly.
+    return fetch(new Request(new URL("/__dash", u.origin)), {
+      headers: req.headers,
+    });
+  }
+  if (await authorized(req)) {
+    if (u.pathname === "/") {
+      // Serve the dashboard shell through the route system (keeps the
+      // hashed assets + ETag caching behavior intact).
+      return fetch(new Request(new URL("/__dash", u.origin)), {
+        headers: req.headers,
+      });
+    }
+    // Signed-in visitor hitting an unknown path → dashboard shell (SPA).
+    return fetch(new Request(new URL("/__dash", u.origin)), {
+      headers: req.headers,
+    });
+  }
+  // Anonymous: gated pages redirect to /login; unknown paths 404.
+  if (u.pathname === "/") {
+    return new Response(null, { status: 303, headers: { Location: "/login" } });
+  }
+  return new Response("not found", { status: 404 });
+};
+
 const server = serve({
   port: PORT,
   hostname: HOST,
   development: false,
+  fetch: AuthGate,
   routes: {
-    "/": index,
+    // The dashboard shell is only served with a valid session. The GET /
+    // route is a guard: in auth mode it maps to nothing (false) so the
+    // request falls through to fetch() above, which redirects anonymous
+    // visitors to /login and re-dispatches authed ones to the guarded
+    // /__dash route that maps straight to the bundled dashboard. In open
+    // mode / maps directly to the dashboard (no gate exists).
+    "/": AUTH_ON || TOKEN
+      ? (false as const)
+      : (dashboardIndex as unknown as Response),
+    "/__dash": dashboardIndex as unknown as Response,
+    "/login": loginIndex as unknown as Response,
     "/api/summary": gate((req) =>
       Response.json(summary(parseDays(new URL(req.url)))),
     ),
@@ -413,7 +467,10 @@ const server = serve({
     }),
     "/api/login": { POST: (req, server) => handleLogin(req, server) },
     "/api/logout": { POST: () => handleLogout() },
-    "/api/session": gate(() => Response.json({ authenticated: true })),
+    "/api/session": async (req: Request): Promise<Response> => {
+      if (await authorized(req)) return Response.json({ authenticated: true });
+      return Response.json({ authenticated: false }, { status: 401 });
+    },
   },
 });
 

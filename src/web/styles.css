@@ -15,6 +15,13 @@
 * {
   box-sizing: border-box;
 }
+/* The SPA toggles views via the `hidden` attribute (app.ts showLogin /
+   showDashboard). Author display rules like `.page { display:flex }` would
+   otherwise beat the UA stylesheet's [hidden] { display:none } and leave the
+   login screen and dashboard visible at the same time. */
+[hidden] {
+  display: none !important;
+}
 html,
 body {
   margin: 0;

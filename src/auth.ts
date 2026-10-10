@@ -63,6 +63,22 @@ export function sessionFromCookie(req: Request): string {
   return m?.[1] ?? "";
 }
 
+/** Cookie-safe token form: "<payload>.<base64url-hmac>". */
+export function encodeToken(token: string): string {
+  const i = token.lastIndexOf(".");
+  if (i < 0) return token;
+  const sig = Buffer.from(token.slice(i + 1), "hex").toString("base64url");
+  return `${token.slice(0, i)}.${sig}`;
+}
+
+/** Inverse of encodeToken (back to "<payload>.<hex-hmac>"). */
+export function decodeToken(cookieVal: string): string {
+  const i = cookieVal.lastIndexOf(".");
+  if (i < 0) return cookieVal;
+  const sig = Buffer.from(cookieVal.slice(i + 1), "base64url").toString("hex");
+  return `${cookieVal.slice(0, i)}.${sig}`;
+}
+
 /** SHA-256 of a string as 64 hex chars — turns a variable-length secret
  * (the argon2id password hash) into a stable 32-byte HMAC key. */
 export async function deriveKey(secret: string): Promise<string> {

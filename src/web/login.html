@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Sign in — Gateway Usage</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <!--
+      Standalone login page. Served without any session (POST /api/login
+      sets the dash_session cookie, then redirects to /). Works without
+      JS: the form posts normally and the 303 carries the cookie. The
+      same-origin SPA shares styles.css and app.ts for polish only.
+    -->
+    <main class="page loginpage" id="loginview">
+      <form class="card loginform" id="loginform" method="post" action="/api/login">
+        <h1>Gateway Usage</h1>
+        <p class="pagesub">Sign in to see your LiteLLM usage.</p>
+        <input name="username" placeholder="Username" autocomplete="username" required />
+        <input name="password" type="password" placeholder="Password" autocomplete="current-password" required />
+        <label class="remember"><input type="checkbox" name="remember" /> Remember me for 30 days</label>
+        <div class="loginmsg" id="loginmsg"></div>
+        <button class="btn loginbtn" type="submit">Sign in</button>
+      </form>
+    </main>
+    <script type="module" src="./app.ts"></script>
+  </body>
+</html>
