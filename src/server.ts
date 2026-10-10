@@ -7,6 +7,12 @@
 import { serve } from "bun";
 import { Database } from "bun:sqlite";
 import index from "./web/index.html";
+import {
+  createSessionToken,
+  deriveKey,
+  sessionFromCookie,
+  verifySessionToken,
+} from "./auth";
 
 const PORT = Number(process.env.PORT ?? 34998);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -17,6 +23,100 @@ const DB_PATH = process.env.LITELLM_DASH_DB ?? "./data/usage.db";
  * the dashboard is open — fine on localhost, not on a LAN.
  */
 const TOKEN = process.env.LITELLM_DASH_TOKEN ?? "";
+
+// ------------------------------------------------------------------ auth
+/**
+ * User/pass login (in addition to the token gate above). Both vars must be
+ * set; anything else falls back to open or token-only mode. The password is
+ * argon2id-hashed once at boot (nothing written to disk); the HMAC session
+ * key is derived from that hash, so changing the password kills every
+ * outstanding session.
+ */
+const USER = process.env.LITELLM_DASH_USER ?? "";
+const PASSWORD = process.env.LITELLM_DASH_PASSWORD ?? "";
+const TTL_DAYS_RAW = Number(process.env.LITELLM_DASH_SESSION_TTL_DAYS ?? 30);
+const TTL_DAYS =
+  Number.isFinite(TTL_DAYS_RAW) && TTL_DAYS_RAW >= 1 && TTL_DAYS_RAW <= 365
+    ? TTL_DAYS_RAW
+    : 30;
+const SESSION_SECRET_OVERRIDE = process.env.LITELLM_DASH_SESSION_SECRET ?? "";
+const AUTH_ON = !!(USER && PASSWORD);
+
+if (!AUTH_ON && (USER || PASSWORD)) {
+  console.log(
+    "auth: both LITELLM_DASH_USER and LITELLM_DASH_PASSWORD must be set to enable login auth; running open",
+  );
+}
+
+let SESSION_SECRET = "";
+let PASSWORD_HASH = "";
+if (AUTH_ON) {
+  PASSWORD_HASH = await Bun.password.hash(PASSWORD); // argon2id, ~200ms once
+  SESSION_SECRET = SESSION_SECRET_OVERRIDE || (await deriveKey(PASSWORD_HASH));
+}
+
+/** Per-IP failed-login tracker: 5 misses in 15 min → 429 until it cools. */
+const RL_MAX = 5;
+const RL_WINDOW = 15 * 60 * 1000;
+const failedLogins = new Map<string, { n: number; until: number }>();
+
+function tooManyFails(ip: string): boolean {
+  const e = failedLogins.get(ip);
+  if (!e) return false;
+  if (Date.now() > e.until) {
+    failedLogins.delete(ip);
+    return false;
+  }
+  return e.n >= RL_MAX;
+}
+
+function recordFail(ip: string): void {
+  const e = failedLogins.get(ip);
+  const now = Date.now();
+  if (!e || now > e.until) failedLogins.set(ip, { n: 1, until: now + RL_WINDOW });
+  else e.n += 1;
+}
+
+async function handleLogin(req: Request, server: any): Promise<Response> {
+  const ip = `${(server.requestIP(req) as any)?.address ?? "unknown"}|login`;
+  if (!AUTH_ON)
+    return Response.json({ error: "auth not configured" }, { status: 500 });
+  if (tooManyFails(ip))
+    return Response.json({ error: "too many attempts" }, { status: 429 });
+  const form = await req.formData().catch(() => null);
+  const username = String(form?.get("username") ?? "");
+  const password = String(form?.get("password") ?? "");
+  const remember = String(form?.get("remember") ?? "") === "on";
+  const userOk = username === USER;
+  // verify() re-derives work from the stored hash — never re-hash per request
+  const passOk = userOk
+    ? await Bun.password.verify(password, PASSWORD_HASH)
+    : false;
+  if (!userOk || !passOk) {
+    recordFail(ip);
+    return Response.json({ error: "invalid credentials" }, { status: 401 });
+  }
+  failedLogins.delete(ip);
+  const ttl = remember ? TTL_DAYS * DAY : 12 * HOUR;
+  const tok = await createSessionToken(ttl, SESSION_SECRET);
+  const secure = new URL(req.url).protocol === "https:" ? "; Secure" : "";
+  const res = new Response(null, { status: 303, headers: { Location: "/" } });
+  res.headers.append(
+    "Set-Cookie",
+    `dash_session=${tok}; Path=/; HttpOnly; SameSite=Lax${secure}` +
+      (remember ? `; Max-Age=${TTL_DAYS * 86400}` : ""),
+  );
+  return res;
+}
+
+const handleLogout = (): Response =>
+  new Response(null, {
+    status: 303,
+    headers: {
+      Location: "/",
+      "Set-Cookie": "dash_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
+    },
+  });
 
 const HOUR = 3_600_000;
 const DAY = 86_400_000;
@@ -240,14 +340,21 @@ function recent(limitRaw: string | null, beforeIdRaw: string | null, statusRaw: 
 }
 
 /**
- * Shared-secret gate for /api/* routes. When LITELLM_DASH_TOKEN is set,
- * requests must carry it as a `?token=` query param (the client appends it
- * to every fetch) or an `Authorization: Bearer` header (API clients).
- * Without the env var every request passes. The HTML/JS/CSS shell stays
- * open — it's identical to the public repo, and all data lives in the API.
+ * Auth gate for /api/* routes. Two modes compose:
+ *  - user/pass (LITELLM_DASH_USER + LITELLM_DASH_PASSWORD): a valid signed
+ *    `dash_session` cookie authorizes the request.
+ *  - shared secret (LITELLM_DASH_TOKEN): `?token=` or `Authorization: Bearer`
+ *    header, unchanged legacy behaviour that keeps deploy.sh and API clients
+ *    working.
+ * With neither set, every request passes (open mode).
  */
-const authorized = (req: Request): boolean => {
-  if (!TOKEN) return true;
+const authorized = async (req: Request): Promise<boolean> => {
+  if (AUTH_ON) {
+    const tok = sessionFromCookie(req);
+    if (tok && (await verifySessionToken(tok, SESSION_SECRET))) return true;
+  }
+  if (!AUTH_ON && !TOKEN) return true;
+  if (!TOKEN) return false;
   const u = new URL(req.url);
   const supplied =
     u.searchParams.get("token") ??
@@ -264,11 +371,11 @@ const authorized = (req: Request): boolean => {
   return diff === 0;
 };
 
-/** Wrap an API handler with the token check. */
+/** Wrap an API handler with the auth check. */
 const gate =
-  (handler: (req: Request) => Response) =>
-  (req: Request): Response =>
-    authorized(req)
+  (handler: (req: Request) => Response | Promise<Response>) =>
+  async (req: Request): Promise<Response> =>
+    (await authorized(req))
       ? handler(req)
       : new Response("unauthorized\n", { status: 401 });
 
@@ -304,6 +411,9 @@ const server = serve({
         ),
       );
     }),
+    "/api/login": { POST: (req, server) => handleLogin(req, server) },
+    "/api/logout": { POST: () => handleLogout() },
+    "/api/session": gate(() => Response.json({ authenticated: true })),
   },
 });
 
