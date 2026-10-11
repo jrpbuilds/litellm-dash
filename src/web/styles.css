@@ -38,7 +38,7 @@ body {
 }
 
 .page {
-  max-width: 1200px;
+  max-width: 1080px;
   margin: 0 auto;
   padding: var(--space-page) var(--space-page) 48px;
   display: flex;
@@ -668,10 +668,10 @@ tbody tr:hover {
 
 /* subtle vision marker after the model name in a log row */
 .vision-icon {
-  font-size: 11px;
-  margin-left: 6px;
+  color: var(--muted);
+  display: inline-flex;
   vertical-align: middle;
-  opacity: 0.75;
+  margin-left: 6px;
   cursor: help;
 }
 

@@ -520,7 +520,7 @@ function renderRecent() {
           : "";
       return `<tr class="${rowCls}" data-row="${r.id}" tabindex="0" role="button" aria-expanded="${expandedId === r.id ? "true" : "false"}">
       <td class="mut">${fmtLogDate(r.ts)}</td>
-      <td class="name">${esc(r.model)}${r.vision ? `<span class="vision-icon" title="Used vision (image input)" aria-label="Used vision (image input)">👁</span>` : ""}${r.provider ? providerChip(r.provider) : ""}${failed ? `<span class="pill bad failpill">failed</span>` : ""}</td>
+      <td class="name">${esc(r.model)}${r.provider ? providerChip(r.provider) : ""}${failed ? `<span class="pill bad failpill">failed</span>` : ""}${r.vision ? `<span class="vision-icon" title="Used vision (image input)" aria-label="Used vision (image input)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.06 12.35a1 1 0 0 1 0-.7C3.42 8.13 7.21 5 12 5s8.58 3.13 9.94 6.65a1 1 0 0 1 0 .7C20.58 15.87 16.79 19 12 19s-8.58-3.13-9.94-6.65Z"/><circle cx="12" cy="12" r="3"/></svg></span>` : ""}</td>
       <td class="num">${tokens ? fmtTokens(tokens) : "–"}</td>
       <td class="num">${latencyCell(r.duration_ms, recentState.latency, group)}</td>
     </tr>` + detailRow;
