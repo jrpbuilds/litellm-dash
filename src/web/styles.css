@@ -60,7 +60,7 @@ body {
 /* --- page head: title + period pills ------------------------------- */
 .pagehead {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 12px;
@@ -73,7 +73,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 8px;
+  gap: 16px;
   flex-shrink: 0;
 }
 .pagehead .headactions {
@@ -687,26 +687,16 @@ tbody tr:hover {
   vertical-align: middle;
 }
 
-/* Mobile: the usage log has 7 columns and doesn't fit a phone viewport —
-   drop Type (redundant with the stream pill on desktop, and chat-stream
-   nuance matters less on small screens), Input/Output (keep Total), and
-   the provider chip, so rows read on one line. A tap on the row expands
-   an inline detail card carrying everything that was hidden. */
+/* Mobile: hide the provider chip and header row so each request fits on
+   one line; the expanded detail card carries the full labels. */
 @media (max-width: 640px) {
-  #recent th:nth-child(2),
-  #recent td:nth-child(2),
-  #recent th:nth-child(5),
-  #recent td:nth-child(5),
-  #recent th:nth-child(6),
-  #recent td:nth-child(6) {
+  #recent .chip,
+  #recent .failpill {
     display: none;
   }
-  #recent .chip {
-    display: none;
+  #recent tr.failed td.name {
+    color: #fca5a5;
   }
-  /* On phones the column headers lie (duration cells show colored values
-     but the header truncates) — drop the header row; compact values are
-     self-evident and the expanded card carries full labels. */
   #recent thead {
     display: none;
   }
@@ -714,31 +704,22 @@ tbody tr:hover {
     padding-top: 9px;
     padding-bottom: 9px;
   }
-  tr.rowmain td:first-child {
-    width: 34%; /* date column breathes; model+tokens share the rest */
-  }
-  #recent td.num {
-    white-space: nowrap;
-  }
-  /* Column widths on mobile (4 visible cols). table-layout:fixed sizes
-     columns from the first row — thead is hidden, so widths are declared
-     per-cell and apply to the sizing row too. */
+  /* table-layout:fixed sizes columns from the first row; thead is hidden,
+     so widths are declared per cell. */
   #recent {
     table-layout: fixed;
     width: 100%;
   }
-  #recent td:nth-child(3) {
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
   #recent td:first-child {
     width: 35.5%;
   }
-  #recent td:nth-child(3) {
-    width: 31.5%;
+  #recent td:nth-child(2) {
+    width: 33.5%;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
-  #recent td:nth-child(4),
-  #recent td:nth-child(7) {
+  #recent td:nth-child(3),
+  #recent td:nth-child(4) {
     width: 15.5%;
   }
   /* absorbed subpixel rounding: prevent 2px phantom scroll */
@@ -768,10 +749,6 @@ tr.rowmain.tappable td:first-child::after {
 tr.rowmain.tappable[aria-expanded="true"] td:first-child::after {
   transform: rotate(90deg);
 }
-/* Open row reads instantly: hairline accent on the left + lifted bg. */
-tr.rowmain.tappable[aria-expanded="true"] td:first-child {
-  box-shadow: inset 3px 0 0 var(--ok);
-}
 tr.rowmain.tappable[aria-expanded="true"] td {
   background: rgba(255, 255, 255, 0.03);
 }
@@ -782,9 +759,12 @@ tr.rowmain.tappable:focus-visible {
   outline: 1px solid var(--ok);
   outline-offset: -1px;
 }
+/* The detail row continues the expanded row's lifted background, so the
+   two read as one block spanning the full table width. */
 tr.mobilerow > td {
+  background: rgba(255, 255, 255, 0.03);
   border-bottom: 1px solid rgba(38, 38, 44, 0.7);
-  padding: 0 10px 12px;
+  padding: 4px 10px 14px;
   animation: rowreveal 0.22s cubic-bezier(0.22, 1, 0.36, 1);
 }
 @keyframes rowreveal {
@@ -805,14 +785,9 @@ tr.mobilerow > td {
   }
 }
 
-/* The detail card itself (shared visuals, mobile-only placement) */
 .detailcard {
-  max-width: 720px;
-  background: color-mix(in srgb, var(--bg) 88%, #ffffff);
-  border: 1px solid color-mix(in srgb, var(--card-border) 70%, #ffffff);
-  border-radius: 10px;
-  padding: 14px 16px;
-  margin-bottom: 2px;
+  border-top: 1px solid var(--card-border);
+  padding-top: 12px;
   animation: detailin 0.18s ease;
 }
 @keyframes detailin {
@@ -830,59 +805,75 @@ tr.mobilerow > td {
     animation: none;
   }
 }
-.detailcard .d-head {
-  font-weight: 600;
-  font-size: 13px;
-  margin-bottom: 10px;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.detailcard .d-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 12px 20px;
-}
-@media (max-width: 640px) {
-  .detailcard .d-grid {
-    grid-template-columns: 1fr 1fr;
-    gap: 8px 14px;
-  }
-}
-.detailcard .d-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-.detailcard .d-label {
+.detailcard .d-title {
+  display: block;
+  margin: 0 0 8px;
   color: color-mix(in srgb, var(--muted) 78%, var(--text));
   font-size: 10px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
+}
+.detailcard .d-error {
+  margin-bottom: 14px;
+}
+.detailcard .d-error .d-title {
+  color: #fca5a5;
+}
+.detailcard .d-groups {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.detailcard .d-group {
+  min-width: 0;
+  padding: 0 22px;
+}
+.detailcard .d-group:first-child {
+  padding-left: 0;
+}
+.detailcard .d-group:last-child {
+  padding-right: 0;
+}
+.detailcard .d-group + .d-group {
+  border-left: 1px solid var(--card-border);
+}
+.detailcard .d-kv {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 0;
+  font-size: 12.5px;
+}
+.detailcard .d-key {
+  color: var(--muted);
+}
+.detailcard .d-val {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+.detailcard .d-val.strong {
   font-weight: 600;
 }
-.detailcard .d-value {
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.detailcard .d-val.mono {
+  font: 12px ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
-/* Status gets a real pill; duration reuses the latency traffic lights. */
-.detailcard .d-value.lat-good,
-.detailcard .d-value.lat-mid,
-.detailcard .d-value.lat-slow,
-.detailcard .d-value.lat-bad {
-  font-size: 13px;
+.detailcard .d-val .lat-good,
+.detailcard .d-val .lat-slow,
+.detailcard .d-val .lat-bad,
+.detailcard .d-val.lat-good,
+.detailcard .d-val.lat-mid,
+.detailcard .d-val.lat-slow,
+.detailcard .d-val.lat-bad {
+  font-size: inherit;
 }
-.detailcard .d-status {
-  align-self: flex-start;
-  margin-top: 1px;
+.detailcard .dim {
+  color: var(--muted);
 }
-/* Provider renders as the same colored chip used elsewhere on the page. */
-.detailcard .d-value.d-provider {
+.detailcard .d-provider {
   color: hsl(var(--h, 220) 70% 75%);
   background: hsl(var(--h, 220) 60% 20% / 0.55);
   border: 1px solid hsl(var(--h, 220) 60% 50% / 0.35);
@@ -890,19 +881,72 @@ tr.mobilerow > td {
   padding: 1px 9px;
   font-size: 11px;
   font-weight: 500;
-  width: fit-content;
-  max-width: 100%;
 }
+
+/* token rows: label, count, then a share-of-total bar */
+.detailcard .d-tok {
+  grid-template-columns: 72px 56px minmax(0, 1fr);
+  align-items: center;
+}
+.detailcard .d-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+.detailcard .d-bar i {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: inherit;
+}
+.detailcard .d-bar.in i {
+  background: #7aa2f7;
+}
+.detailcard .d-bar.out i {
+  background: #bb9af7;
+}
+
+/* duration vs the group's avg and p95 */
+.detailcard .d-scale {
+  position: relative;
+  height: 6px;
+  margin: 6px 0 6px 82px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.detailcard .d-scale-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: currentColor;
+  opacity: 0.8;
+}
+.detailcard .d-tick {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--text);
+  opacity: 0.55;
+}
+.detailcard .d-tick.p95 {
+  background: #f87171;
+}
+
 .detailcard .d-client {
-  margin-top: 10px;
-  padding-top: 8px;
+  margin-top: 14px;
+  padding-top: 10px;
   border-top: 1px solid var(--card-border);
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
 }
-.detailcard .d-client .d-label {
+.detailcard .d-client .d-title {
+  margin: 0;
   flex: none;
 }
 .detailcard .d-client-name {
@@ -913,14 +957,31 @@ tr.mobilerow > td {
 }
 .detailcard .d-meta {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 11.5px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
 }
-.detailcard .errmsg {
-  margin-top: 10px;
+
+@media (max-width: 640px) {
+  .detailcard .d-groups {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .detailcard .d-group,
+  .detailcard .d-group:first-child,
+  .detailcard .d-group:last-child {
+    padding: 0;
+  }
+  .detailcard .d-group + .d-group {
+    border-left: 0;
+    border-top: 1px solid var(--card-border);
+    padding-top: 12px;
+  }
+  .detailcard .d-client {
+    flex-wrap: wrap;
+  }
 }
 .chip-tt {
   margin-left: 6px;
@@ -955,15 +1016,11 @@ tr.mobilerow > td {
   background: #262626;
   color: var(--text);
 }
-.visionfilter.active {
-  background: #262626;
-  color: var(--text);
-}
-.pill.clickable {
-  cursor: pointer;
-}
-.pill.clickable:hover {
-  filter: brightness(1.2);
+.failpill {
+  font-size: 10.5px;
+  padding: 2px 8px;
+  margin-left: 8px;
+  vertical-align: middle;
 }
 
 /* per-request duration traffic lights — same hues as before, mixed 65/35
@@ -1017,16 +1074,6 @@ tr.mobilerow > td {
 .lat-tip:focus-visible .lat-pop {
   opacity: 1;
 }
-tr.failed > td {
-  border-bottom: 0;
-}
-tr.failed td:first-child {
-  box-shadow: inset 3px 0 0 rgba(248, 113, 113, 0.85);
-}
-tr.errrow > td {
-  border-bottom: 1px solid rgba(38, 38, 44, 0.7);
-  padding: 0 10px 10px;
-}
 .errmsg {
   margin: 0;
   padding: 10px 12px;
@@ -1039,7 +1086,6 @@ tr.errrow > td {
   white-space: pre-wrap;
   word-break: break-word;
   text-align: left;
-  max-width: 720px;
 }
 
 .empty {

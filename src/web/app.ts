@@ -501,38 +501,27 @@ const recentState: {
 
 function renderRecent() {
   const head = `<thead><tr>
-    <th>Date</th><th>Type</th><th>Model</th>
-    <th class="num">Tokens</th><th class="num">Input</th><th class="num">Output</th>
-    <th class="num">Duration</th>
+    <th>Date</th><th>Model</th><th class="num">Tokens</th><th class="num">Duration</th>
   </tr></thead>`;
   const body = recentState.rows
     .map((r, i) => {
       const type = r.call_type === "acompletion" || r.call_type === "completion" ? "chat" : r.call_type ?? "–";
-      const typePill = r.stream ? "chat · stream" : type;
       const tokens = r.total_tokens ?? r.prompt_tokens + r.completion_tokens;
       const failed = r.status !== "success";
-      const pillCls = failed ? "bad clickable" : "dim";
-      const expandBtn = failed
-        ? `<span class="pill ${pillCls}" data-err="${r.id}" role="button" tabindex="0">${esc(typePill)} ${expandedId === r.id ? "▲" : "▼"}</span>`
-        : `<span class="pill ${pillCls}">${esc(typePill)}</span>`;
-
       const group = periodState.group === "provider" ? (r.provider ?? "unknown") : r.model;
       const isAppended =
         recentState.appendCount > 0 && i >= recentState.rows.length - recentState.appendCount;
       const rowCls = `rowmain${failed ? " failed" : ""} tappable${isAppended ? " rowin" : ""}`;
-      // Clicking a row expands a detail card with the columns hidden on mobile,
-      // the calling client and, for failures, the error text.
+      // Clicking a row expands a detail card with the full record: type,
+      // token split, upstream, client and, for failures, the error text.
       const detailRow =
         expandedId === r.id
-          ? `<tr class="mobilerow"><td colspan="7">${detailCard(r, typePill, tokens)}</td></tr>`
+          ? `<tr class="mobilerow"><td colspan="4">${detailCard(r, type, tokens, group)}</td></tr>`
           : "";
       return `<tr class="${rowCls}" data-row="${r.id}" tabindex="0" role="button" aria-expanded="${expandedId === r.id ? "true" : "false"}">
       <td class="mut">${fmtLogDate(r.ts)}</td>
-      <td>${expandBtn}</td>
-      <td class="name">${esc(r.model)}${r.vision ? `<span class="vision-icon" title="Used vision (image input)" aria-label="Used vision (image input)">👁</span>` : ""}${r.provider ? providerChip(r.provider) : ""}</td>
+      <td class="name">${esc(r.model)}${r.vision ? `<span class="vision-icon" title="Used vision (image input)" aria-label="Used vision (image input)">👁</span>` : ""}${r.provider ? providerChip(r.provider) : ""}${failed ? `<span class="pill bad failpill">failed</span>` : ""}</td>
       <td class="num">${tokens ? fmtTokens(tokens) : "–"}</td>
-      <td class="num mut">${r.prompt_tokens ? fmtTokens(r.prompt_tokens) : "–"}</td>
-      <td class="num mut">${r.completion_tokens ? fmtTokens(r.completion_tokens) : "–"}</td>
       <td class="num">${latencyCell(r.duration_ms, recentState.latency, group)}</td>
     </tr>` + detailRow;
     })
@@ -542,12 +531,12 @@ function renderRecent() {
     : "No requests logged yet. Traffic will show up here.";
   const foot =
     recentState.hasMore || recentState.loadingMore
-      ? `<tfoot><tr><td colspan="7" class="loadmore"><button class="btn${recentState.loadingMore ? " loading" : ""}" id="loadmore"${recentState.loadingMore ? " disabled" : ""}>Load more</button></td></tr></tfoot>`
+      ? `<tfoot><tr><td colspan="4" class="loadmore"><button class="btn${recentState.loadingMore ? " loading" : ""}" id="loadmore"${recentState.loadingMore ? " disabled" : ""}>Load more</button></td></tr></tfoot>`
       : "";
   $("recent").innerHTML =
     head +
     `<tbody>${
-      body || `<tr><td colspan="7" class="empty">${emptyMsg}</td></tr>`
+      body || `<tr><td colspan="4" class="empty">${emptyMsg}</td></tr>`
     }</tbody>` +
     foot;
   recentState.appendCount = 0;
@@ -569,53 +558,92 @@ function clientName(ua: string | null): string {
   return hit ? hit.name : base || "unknown client";
 }
 
+/** Full timestamp with seconds for the detail panel, e.g. "Oct 11, 06:02:14 AM". */
+function fmtFullDate(iso: string): string {
+  return new Date(iso).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
+}
+
+function kv(label: string, value: string, cls = ""): string {
+  return `<div class="d-kv"><span class="d-key">${label}</span><span class="d-val ${cls}">${value}</span></div>`;
+}
+
+/** Token row with a bar sized by its share of the request total. */
+function tokenRow(label: string, n: number, total: number, cls: string): string {
+  const pct = total > 0 ? (n / total) * 100 : 0;
+  return `<div class="d-kv d-tok"><span class="d-key">${label}</span><span class="d-val">${n ? fmtTokens(n) : "–"}</span><span class="d-bar ${cls}">${n ? `<i style="width:${pct.toFixed(1)}%"></i>` : ""}</span></div>`;
+}
+
 /**
- * Detail panel for an expanded request row: everything the hidden columns
- * carried (type, provider chip, input/output split), the calling client,
- * plus optional error block.
+ * Where this request sits against its group's avg and p95: a track scaled
+ * to the larger of p95 and this duration, with tick marks for avg and p95.
  */
-function detailCard(r: RecentRow, typePill: string, tokens: number): string {
+function timingScale(ms: number, row: LatencyResp["rows"][number]): string {
+  const max = Math.max(row.p95Ms, ms) * 1.08 || 1;
+  const at = (v: number) => `${Math.min(100, (v / max) * 100).toFixed(1)}%`;
+  return `<div class="d-scale" aria-hidden="true">
+    <span class="d-scale-fill ${latencyTier(ms)}" style="width:${at(ms)}"></span>
+    <span class="d-tick" style="left:${at(row.avgMs)}" title="avg ${fmtDur(row.avgMs)}"></span>
+    <span class="d-tick p95" style="left:${at(row.p95Ms)}" title="p95 ${fmtDur(row.p95Ms)}"></span>
+  </div>`;
+}
+
+/**
+ * Detail panel for an expanded request row, grouped as routing / tokens /
+ * timing with the calling client underneath. Failures lead with the error.
+ */
+function detailCard(r: RecentRow, type: string, tokens: number, group: string): string {
   const failed = r.status !== "success";
-  // Status pill + duration reuse the latency traffic-light tiers so color
-  // always means the same thing everywhere on the page.
-  const statusPill = failed
-    ? `<span class="pill bad d-status">failed</span>`
-    : `<span class="pill ok d-status">success</span>`;
-  const stats: {
-    label: string;
-    value: string;
-    valueCls?: string;
-    hue?: number;
-    unknown?: boolean;
-  }[] = [
-    { label: "Type", value: esc(typePill) },
-    {
-      label: "Provider",
-      value: r.provider ? esc(r.provider) : "unknown",
-      valueCls: "d-provider",
-      hue: r.provider ? providerHue(r.provider) : 0,
-      unknown: !r.provider,
-    },
-    { label: "Upstream", value: r.upstream_model ? esc(r.upstream_model) : "–" },
-    { label: "Input tokens", value: r.prompt_tokens ? fmtTokens(r.prompt_tokens) : "–" },
-    { label: "Output tokens", value: r.completion_tokens ? fmtTokens(r.completion_tokens) : "–" },
-    { label: "Total tokens", value: tokens ? fmtTokens(tokens) : "–" },
-    { label: "Vision input", value: r.vision ? "yes" : "no", valueCls: r.vision ? "lat-good" : "dim" },
-  ];
+
+  const kind = [type, r.stream ? "streamed" : "not streamed", r.vision ? "vision" : null]
+    .filter(Boolean)
+    .join(" · ");
+  const provider = r.provider
+    ? `<span class="d-provider" style="--h:${providerHue(r.provider)}">${esc(r.provider)}</span>`
+    : `<span class="dim">unknown</span>`;
+  const routing = [
+    kv("Model", esc(r.model), "strong"),
+    kv("Upstream", r.upstream_model ? esc(r.upstream_model) : `<span class="dim">–</span>`, "mono"),
+    kv("Provider", provider),
+    kv("Request", esc(kind)),
+  ].join("");
+
+  const tokenRows = [
+    tokenRow("Input", r.prompt_tokens, tokens, "in"),
+    tokenRow("Output", r.completion_tokens, tokens, "out"),
+    kv("Total", tokens ? fmtTokens(tokens) : "–", "strong"),
+  ].join("");
+
+  const stats = recentState.latency?.rows.find((s) => s.name === group);
+  const ms = r.duration_ms;
+  let timing = kv("Duration", fmtDur(ms), `strong ${latencyTier(ms)}`);
+  if (ms != null && stats && stats.n > 1) {
+    const ratio = ms / stats.avgMs;
+    const verdict = ms > stats.p95Ms ? "lat-bad" : ratio > 1.15 ? "lat-slow" : "lat-good";
+    timing +=
+      kv("vs avg", `<span class="${verdict}">${ratio.toFixed(1)}×</span> <span class="dim">${fmtDur(stats.avgMs)} avg · ${fmtDur(stats.p95Ms)} p95</span>`) +
+      timingScale(ms, stats);
+  }
+  timing += kv("Logged", fmtFullDate(r.ts));
+
+  const meta = [r.user_agent, r.requester_ip].filter(Boolean).map((s) => esc(s as string)).join(" · ");
   return `<div class="detailcard">
-    <div class="d-grid">${stats
-      .map(
-        (s) =>
-          `<div class="d-item"><span class="d-label">${s.label}</span><span class="d-value ${s.valueCls ?? ""}"${s.hue != null && !s.unknown ? ` style="--h:${s.hue}"` : ""}>${s.value}</span></div>`,
-      )
-      .join("")}
-      <div class="d-item"><span class="d-label">Status</span>${statusPill}</div>
+    ${failed ? `<div class="d-error"><span class="d-title">Error</span><pre class="errmsg">${esc(r.error ?? "no error text recorded")}</pre></div>` : ""}
+    <div class="d-groups">
+      <section class="d-group"><h4 class="d-title">Routing</h4>${routing}</section>
+      <section class="d-group"><h4 class="d-title">Tokens</h4>${tokenRows}</section>
+      <section class="d-group"><h4 class="d-title">Timing</h4>${timing}</section>
     </div>
-    ${failed ? `<pre class="errmsg">${esc(r.error ?? "no error text recorded")}</pre>` : ""}
     <div class="d-client">
-      <span class="d-label">Client</span>
+      <span class="d-title">Client</span>
       <span class="d-client-name">${esc(clientName(r.user_agent))}</span>
-      <span class="d-meta">${esc(r.user_agent ?? "")}${r.requester_ip ? ` · ${esc(r.requester_ip)}` : ""}</span>
+      ${meta ? `<span class="d-meta">${meta}</span>` : ""}
     </div>
   </div>`;
 }
@@ -794,9 +822,9 @@ wireChartHover();
 /** Expand the row under `target` (accordion: opening one closes the other).
  * Returns false when the target isn't inside a request row. */
 function toggleRow(target: HTMLElement): boolean {
-  const el = target.closest<HTMLElement>("[data-err], tr.rowmain.tappable");
+  const el = target.closest<HTMLElement>("tr.rowmain.tappable");
   if (!el) return false;
-  const id = Number(el.dataset.err ?? el.dataset.row);
+  const id = Number(el.dataset.row);
   expandedId = expandedId === id ? null : id;
   renderRecent();
   return true;
@@ -863,7 +891,7 @@ function showSkeletons() {
     { length: 4 },
     () => `<div class="card statcard skel"><div class="label skelbar"></div><div class="value skelbar wide"></div></div>`,
   ).join("");
-  const cells = `<td class="mut"><div class="skelbar"></div></td>${`<td><div class="skelbar"></div></td>`.repeat(6)}`;
+  const cells = `<td class="mut"><div class="skelbar"></div></td>${`<td><div class="skelbar"></div></td>`.repeat(3)}`;
   $("recent").innerHTML = `<tbody>${`<tr class="skelrow">${cells}</tr>`.repeat(6)}</tbody>`;
 }
 
