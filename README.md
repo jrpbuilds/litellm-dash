@@ -142,6 +142,27 @@ WantedBy=default.target
 | `POST /api/logout` | clears the session cookie |
 | `/api/session` | `{ authenticated: true }` or 401 — the SPA's auth probe |
 
+## Developing against the gateway DB from another machine
+
+You can run a dev copy of the dashboard on your own laptop while it reads
+the usage DB from the gateway host (192.168.0.200):
+
+```bash
+git clone <repo-url> litellm-dash && cd litellm-dash
+bun install
+ssh-copy-id agent@192.168.0.200      # if you don't have key auth yet
+
+bash scripts/dev.sh                  # snapshot mode + start dev server
+LIVE=1 bash scripts/dev.sh           # sshfs live view instead of snapshot
+bash scripts/dev.sh --no-start       # just refresh the snapshot
+```
+
+Snapshot mode copies a consistent SQLite backup to `data/usage.db` locally
+(WAL-safe, ~600 kB) and starts Bun with a throwaway dev login
+(`LITELLM_DASH_USER=dev` / `LITELLM_DASH_PASSWORD=dev` unless you override).
+The dashboard opens the DB read-only either way, so dev work can't corrupt
+the gateway's log.
+
 ## Notes
 
 - `bash scripts/deploy.sh` syncs the repo to the systemd deploy copy,
