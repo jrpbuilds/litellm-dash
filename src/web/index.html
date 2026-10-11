@@ -4,6 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'" />
+    <meta name="referrer" content="no-referrer" />
     <title>Gateway Usage · LiteLLM Dash</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -16,19 +18,25 @@
           <p class="pagesub">Tokens, latency and provider routing through your LiteLLM proxy.</p>
         </div>
         <div class="headright">
-          <div class="headactions">
-            <button class="btn" id="logoutbtn" title="Sign out">Sign out</button>
-          </div>
-          <div class="periods" id="periods">
-            <button data-days="1">1d</button>
-            <button data-days="7" class="active">7d</button>
-            <button data-days="30">30d</button>
-          </div>
+          <button class="btn signout" id="logoutbtn" title="End this session and return to the sign-in page" hidden>Sign out</button>
         </div>
       </header>
 
+      <div class="viewbar">
+        <div class="viewtoggle" id="viewtoggle">
+          <button data-view="usage" class="active">Usage</button>
+          <button data-view="models">Models</button>
+        </div>
+        <div class="periods" id="periods">
+          <button data-days="1">1d</button>
+          <button data-days="7" class="active">7d</button>
+          <button data-days="30">30d</button>
+        </div>
+      </div>
+
       <section class="cards" id="cards"></section>
 
+      <div id="usageview">
       <section class="card chartcard">
         <div class="cardhead">
           <div>
@@ -72,9 +80,24 @@
             <a class="btn" id="export" href="/api/export.csv?days=7">Export CSV</a>
           </div>
         </div>
-        <div class="tablewrap">
+        <div class="tablewrap" id="tablewrap">
           <table class="data" id="recent"></table>
+          <div class="logfoot" id="logfoot" hidden>
+            <span id="rowcount"></span>
+            <button type="button" class="linkbtn" id="backtotop">Back to top ↑</button>
+          </div>
         </div>
+      </section>
+      </div>
+
+      <section class="card modelscard" id="modelsview" hidden>
+        <div class="cardhead">
+          <div>
+            <h2>Models</h2>
+            <p class="sub" id="modelssub">Specs from the gateway; usage for the current period.</p>
+          </div>
+        </div>
+        <div class="modelsgrid" id="modelsgrid"></div>
       </section>
 
       <footer>

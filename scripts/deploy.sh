@@ -36,7 +36,8 @@ DASH_PASSWORD="$(env_or_dotenv LITELLM_DASH_PASSWORD)"
 BASE="http://127.0.0.1:$PORT"
 
 JAR="$(mktemp)"
-trap 'rm -f "$JAR"' EXIT
+CURLCFG="$(mktemp)"
+trap 'rm -f "$JAR" "$CURLCFG"' EXIT
 
 echo "== syncing $REPO -> $DEPLOY_DIR"
 rsync -a --delete --exclude .git --exclude node_modules --exclude data --exclude .env \
@@ -53,12 +54,13 @@ done
 
 CURL_AUTH=()
 if [[ -n "$DASH_USER" && -n "$DASH_PASSWORD" ]]; then
-  echo "== logging in as $DASH_USER"
-  code=$(curl -s -o /dev/null -w '%{http_code}' -c "$JAR" \
-    --data-urlencode "username=$DASH_USER" \
-    --data-urlencode "password=$DASH_PASSWORD" \
-    --data "remember=on" \
-    "$BASE/api/login")
+  echo "== logging in"
+  # Credentials live in a mode-600 curl config, not on the process command line.
+  umask 077
+  printf 'data-urlencode = "username=%s"\ndata-urlencode = "password=%s"\ndata = "remember=on"\n' \
+    "$DASH_USER" "$DASH_PASSWORD" >"$CURLCFG"
+  code=$(curl -s -o /dev/null -w '%{http_code}' -c "$JAR" -K "$CURLCFG" "$BASE/api/login")
+  rm -f "$CURLCFG"
   if [[ "$code" != "303" ]]; then
     echo "== deploy smoke FAILED: login returned HTTP $code"
     exit 1
@@ -86,6 +88,7 @@ check "chart"          "/api/chart?days=7&group=model"
 check "latency"        "/api/latency?days=7&group=model"
 check "recent"         "/api/recent?limit=5"
 check "csv export"     "/api/export.csv?days=7"
+check "models"         "/api/models?days=7"
 check "session"        "/api/session"
 
 if [[ ${#CURL_AUTH[@]} -gt 0 ]]; then

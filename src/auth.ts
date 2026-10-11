@@ -29,13 +29,17 @@ export function createSessionToken(ttlMs: number, secret: string, now = Date.now
   return `${payload}.${sign(payload, secret)}`;
 }
 
-/** True only for a well-formed, correctly signed, unexpired token. */
+/**
+ * True only for a well-formed, correctly signed, unexpired token.
+ * The MAC is checked before expiry so a forged timestamp is not
+ * distinguishable from a bad signature without the key.
+ */
 export function verifySessionToken(token: string, secret: string, now = Date.now()): boolean {
   const m = /^(1\.(\d{1,16}))\.([A-Za-z0-9_-]{43})$/.exec(token);
   if (!m) return false;
   const [, payload, expiry, sig] = m;
-  if (now > Number(expiry)) return false;
-  return safeEqual(sign(payload!, secret), sig!);
+  if (!safeEqual(sign(payload!, secret), sig!)) return false;
+  return now <= Number(expiry);
 }
 
 /** Fixed-window failure counter per key (client IP). */

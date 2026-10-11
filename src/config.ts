@@ -14,10 +14,14 @@ export interface Config {
   sessionTtlDays: number;
   /** Explicit HMAC key; when empty one is derived from the password hash. */
   sessionSecret: string;
-  /** Shared secret accepted as `?token=` or `Authorization: Bearer`. */
+  /** Shared secret accepted only as `Authorization: Bearer` (never a query param). */
   token: string;
   /** Trust CF-Connecting-IP / X-Forwarded-* headers from a reverse proxy. */
   trustProxy: boolean;
+  /** Base URL of the LiteLLM proxy, for live model metadata (/model/info). */
+  proxyUrl: string;
+  /** Master key for /model/info; empty means the fetch degrades to []. */
+  proxyToken: string;
 }
 
 type Env = Record<string, string | undefined>;
@@ -48,6 +52,8 @@ export function loadConfig(env: Env = Bun.env): Config {
     sessionSecret: env.LITELLM_DASH_SESSION_SECRET ?? "",
     token: env.LITELLM_DASH_TOKEN ?? "",
     trustProxy: truthy(env.LITELLM_DASH_TRUST_PROXY),
+    proxyUrl: env.LITELLM_DASH_PROXY_URL ?? "",
+    proxyToken: env.LITELLM_DASH_PROXY_TOKEN ?? "",
   };
 }
 
@@ -57,14 +63,31 @@ export function authMode(cfg: Config): AuthMode {
   return "open";
 }
 
+const LOOPBACK_HOSTS = ["127.0.0.1", "localhost", "::1"];
+
+export function isLoopbackHost(host: string): boolean {
+  return LOOPBACK_HOSTS.includes(host);
+}
+
+/**
+ * Open mode has no credentials, so it may only listen on loopback. A public
+ * bind must set login or a token; callers should refuse to start otherwise.
+ */
+export function publicBindWithoutAuth(cfg: Config): boolean {
+  return authMode(cfg) === "open" && !isLoopbackHost(cfg.host);
+}
+
 /** Human-readable problems worth logging at startup. */
 export function configWarnings(cfg: Config): string[] {
   const out: string[] = [];
   if (!!cfg.user !== !!cfg.password) {
     out.push("LITELLM_DASH_USER and LITELLM_DASH_PASSWORD must both be set to enable login; ignoring them");
   }
-  if (authMode(cfg) === "open" && !["127.0.0.1", "localhost", "::1"].includes(cfg.host)) {
+  if (publicBindWithoutAuth(cfg)) {
     out.push(`no authentication configured and listening on ${cfg.host}; anyone on the network can view usage`);
+  }
+  if (cfg.proxyUrl && !cfg.proxyToken) {
+    out.push("LITELLM_DASH_PROXY_URL is set without LITELLM_DASH_PROXY_TOKEN; /model/info needs a master key, model specs will be missing");
   }
   return out;
 }

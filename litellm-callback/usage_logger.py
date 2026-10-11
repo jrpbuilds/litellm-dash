@@ -106,6 +106,14 @@ def _number(value: Any) -> int:
     return value if isinstance(value, (int, float)) else 0
 
 
+# LiteLLM failure text can echo an upstream key or a bearer token.
+_SECRET_RE = re.compile(r"sk-[A-Za-z0-9_-]+|Bearer\s+\S+", re.IGNORECASE)
+
+
+def _redact(error: str) -> str:
+    return _SECRET_RE.sub("[redacted]", error)
+
+
 def _vision_requested(messages: Any) -> int:
     """1 when any message carries a typed image content part.
 
@@ -152,6 +160,7 @@ class SQLiteUsageLogger(CustomLogger):
         if self._conn is None:
             os.makedirs(os.path.dirname(self.db_path) or ".", exist_ok=True)
             conn = sqlite3.connect(self.db_path, timeout=30, check_same_thread=False)
+            os.chmod(self.db_path, 0o600)
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
             cols = {r[1] for r in conn.execute("PRAGMA table_info(requests)")}
@@ -222,7 +231,7 @@ class SQLiteUsageLogger(CustomLogger):
     async def async_log_failure_event(self, kwargs, response_obj, start_time, end_time):
         slp = kwargs.get("standard_logging_object") or {}
         err = kwargs.get("exception") or slp.get("error_str")
-        row = self._extract(kwargs, "failure", str(err)[:_ERROR_MAX] if err else None)
+        row = self._extract(kwargs, "failure", _redact(str(err))[:_ERROR_MAX] if err else None)
         await asyncio.to_thread(self._write, row)
 
 

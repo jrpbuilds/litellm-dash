@@ -25,7 +25,8 @@ export class UsageDb {
     if (this.db) return this.db;
     try {
       this.db = new Database(this.path, { readonly: true });
-    } catch {
+    } catch (err) {
+      console.warn(`usage db unavailable (${this.path}): ${err instanceof Error ? err.message : err}`);
       this.db = null;
     }
     return this.db;
@@ -40,7 +41,8 @@ export class UsageDb {
     if (!db) return null;
     try {
       return db.query<T, SQLQueryBindings[]>(sql).all(...params);
-    } catch {
+    } catch (err) {
+      console.warn(`usage db query failed (${this.path}): ${err instanceof Error ? err.message : err}`);
       this.close();
       return null;
     }
@@ -169,8 +171,11 @@ export interface RecentQuery {
   failuresOnly?: boolean;
 }
 
-/** Newest requests first, keyset-paginated on id so pages stay stable while
- * new rows arrive. Pass the last id already shown as `beforeId`. */
+/**
+ * Newest requests first, keyset-paginated on id so pages stay stable while
+ * new rows arrive. Pass the last id already shown as `beforeId`.
+ * Unlike summary, chart, latency, and export, the log is not period-scoped.
+ */
 export function recent(db: UsageDb, { limit = 50, beforeId, failuresOnly = false }: RecentQuery) {
   const lim = Math.min(200, Math.max(1, Math.floor(limit) || 50));
   const where: string[] = [];
@@ -196,6 +201,21 @@ export function recent(db: UsageDb, { limit = 50, beforeId, failuresOnly = false
   return { rows: hasMore ? rows.slice(0, lim) : rows, hasMore };
 }
 
+/** Requests and tokens per model group over the window; feeds /api/models. */
+export function modelUsage(db: UsageDb, days: Days, now = Date.now()) {
+  const rows =
+    db.all(
+      `SELECT COALESCE(model_group, model) AS name, COUNT(*) AS requests, COALESCE(SUM(total_tokens), 0) AS tokens
+       FROM requests
+       WHERE ts >= ? AND COALESCE(model_group, model) != ''
+       GROUP BY name`,
+      windowStart(days, now),
+    ) ?? [];
+  const byName = new Map<string, { requests: number; tokens: number }>();
+  for (const r of rows) byName.set(String(r.name), { requests: num(r.requests), tokens: num(r.tokens) });
+  return byName;
+}
+
 const CSV_COLUMNS = [
   "ts",
   "model",
@@ -214,21 +234,26 @@ const CSV_COLUMNS = [
   "error",
 ] as const;
 
-/** Quote per RFC 4180 and neutralise spreadsheet formulas in text cells. */
+/**
+ * Quote per RFC 4180 and neutralise spreadsheet formulas in text cells.
+ * A leading formula after optional whitespace (`=`, `+`, `-`, `@`, `|`, tab,
+ * CR) is prefixed so Excel does not execute it.
+ */
 export function csvField(v: unknown): string {
   if (v == null) return "";
   let s = String(v);
-  if (typeof v === "string" && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  if (typeof v === "string" && /^\s*[=+\-@|\t\r]/.test(s)) s = `'${s}`;
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-export function exportCsv(db: UsageDb, days: Days, now = Date.now()): string {
+export function exportCsv(db: UsageDb, days: Days, now = Date.now(), failuresOnly = false): string {
+  const where = failuresOnly ? "ts >= ? AND status != 'success'" : "ts >= ?";
   const rows =
     db.all(
       `SELECT ts, COALESCE(model_group, model) AS model, upstream_model, provider, call_type,
               stream, prompt_tokens, completion_tokens, total_tokens, duration_ms, status,
               vision, user_agent, requester_ip, error
-       FROM requests WHERE ts >= ? ORDER BY id`,
+       FROM requests WHERE ${where} ORDER BY id`,
       windowStart(days, now),
     ) ?? [];
   const lines = rows.map((r) => CSV_COLUMNS.map((c) => csvField(r[c])).join(","));

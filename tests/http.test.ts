@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { RateLimiter } from "../src/auth";
-import { iso, startServer, tempUsageDb, testConfig } from "./helpers";
+import { makeModelInfoFetcher, parseModels, proxyInfoUrl, type FetchLike } from "../src/modelinfo";
+import { iso, startServer, stubModelInfo, tempUsageDb, testConfig } from "./helpers";
 
 let data: ReturnType<typeof tempUsageDb>;
 
@@ -61,12 +62,195 @@ describe("open mode", () => {
     expect(res.headers.get("content-disposition")).toContain("litellm-usage-30d.csv");
   });
 
+  test("API responses are uncacheable and carry security headers", async () => {
+    const res = await srv.get("/api/summary?days=1");
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(res.headers.get("x-frame-options")).toBe("DENY");
+    expect(res.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+  });
+
+  test("HTML shells bundle the client and carry a CSP meta tag", async () => {
+    const res = await srv.get("/");
+    const html = await res.text();
+    expect(html).toContain('http-equiv="Content-Security-Policy"');
+    expect(html).toContain("frame-ancestors 'none'");
+    expect(html).toMatch(/<script type="module"[^>]+src="\/[^"]+\.js"/);
+    expect(html).not.toContain('src="./app.ts"');
+  });
+
   test("wrong method is 405 with Allow, unknown path is 404", async () => {
     const res = await srv.get("/api/summary", { method: "POST" });
     expect(res.status).toBe(405);
     expect(res.headers.get("allow")).toBe("GET");
     expect((await srv.get("/api/login")).headers.get("allow")).toBe("POST");
     expect((await srv.get("/nope")).status).toBe(404);
+  });
+});
+
+describe("models endpoint", () => {
+  // Raw /model/info payloads, like the proxy actually returns.
+  const advertised = [
+    {
+      model_name: "alpha",
+      litellm_params: { model: "openai/alpha-v2" },
+      model_info: { max_model_len: 128_000, max_output_tokens: 16_000, supports_vision: true },
+      input_cost_per_token: 1.1e-7,
+      output_cost_per_token: 4.4e-7,
+    },
+    {
+      model_name: "never-called",
+      litellm_params: { model: "vertex/gemini" },
+      mode: "chat",
+      supports_function_calls: true,
+    },
+  ];
+  const info = () => stubModelInfo({ configured: true, models: parseModels(advertised) });
+
+  test("merges /model/info with usage from the DB", async () => {
+    const srv = await startServer(testConfig(), { db: data.db, modelInfo: info() });
+    try {
+      const body = await (await srv.get("/api/models?days=7")).json();
+      expect(body.dbAvailable).toBe(true);
+      expect(body.proxyConfigured).toBe(true);
+      expect(body.models).toEqual([
+        {
+          name: "alpha",
+          provider: "openai",
+          upstream: "openai/alpha-v2",
+          contextWindow: 128_000,
+          maxOutput: 16_000,
+          mode: null,
+          vision: true,
+          tools: false,
+          reasoning: false,
+          inputCost: 1.1e-7,
+          outputCost: 4.4e-7,
+          requests: 1,
+          tokens: 10,
+        },
+        {
+          name: "never-called",
+          provider: "vertex",
+          upstream: "vertex/gemini",
+          contextWindow: null,
+          maxOutput: null,
+          mode: "chat",
+          vision: false,
+          tools: true,
+          reasoning: false,
+          inputCost: null,
+          outputCost: null,
+          requests: 0,
+          tokens: 0,
+        },
+      ]);
+    } finally {
+      srv.stop();
+    }
+  });
+
+  test("a called-but-unadvertised model still appears", async () => {
+    const srv = await startServer(testConfig(), {
+      db: data.db,
+      modelInfo: stubModelInfo({ configured: true, models: [] }),
+    });
+    try {
+      const body = await (await srv.get("/api/models?days=7")).json();
+      expect(body.proxyConfigured).toBe(true);
+      expect(body.models).toEqual([
+        expect.objectContaining({ name: "alpha", requests: 1, tokens: 10 }),
+      ]);
+    } finally {
+      srv.stop();
+    }
+  });
+
+  test("proxy failure degrades to usage-only", async () => {
+    const srv = await startServer(testConfig(), {
+      db: data.db,
+      // Raw fetcher that throws, like an unreachable proxy does in production.
+      modelInfo: stubModelInfo(() => Promise.reject(new Error("connection refused"))),
+    });
+    try {
+      const res = await srv.get("/api/models?days=7");
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.proxyConfigured).toBe(false);
+      expect(body.models).toEqual([expect.objectContaining({ name: "alpha" })]);
+    } finally {
+      srv.stop();
+    }
+  });
+
+  test("the endpoint is gated in token mode", async () => {
+    const srv = await startServer(testConfig({ token: "t" }), { db: data.db, modelInfo: info() });
+    try {
+      expect((await srv.get("/api/models")).status).toBe(401);
+      expect((await srv.get("/api/models?token=t")).status).toBe(401);
+      expect((await srv.get("/api/models", { headers: { Authorization: "Bearer t" } })).status).toBe(200);
+    } finally {
+      srv.stop();
+    }
+  });
+});
+
+describe("model info fetcher", () => {
+  const payload = {
+    data: [
+      { model_name: "kept", litellm_params: { model: "openai/kept", custom_llm_provider: "custom" }, max_model_len: 4096 },
+      { model_name: "reasoner", model_info: { supports_reasoning: true } },
+      { litellm_params: { model: "openai/skipped" } },
+      "not-an-object",
+    ],
+  };
+
+  test("parseModels keeps the useful rows and ignores the rest", () => {
+    expect(parseModels("nope")).toEqual([]);
+    expect(parseModels(null)).toEqual([]);
+    const models = parseModels(payload);
+    expect(models.map((m) => m.name)).toEqual(["kept", "reasoner"]);
+    expect(models[0]).toMatchObject({ provider: "custom", contextWindow: 4096, upstream: "openai/kept" });
+    expect(models[1]).toMatchObject({ reasoning: true, provider: null });
+  });
+
+  test("only http(s) proxy URLs are fetched", () => {
+    expect(proxyInfoUrl("")).toBeNull();
+    expect(proxyInfoUrl("file:///etc/passwd")).toBeNull();
+    expect(proxyInfoUrl("http://litellm:4000/")).toBe("http://litellm:4000/model/info");
+    expect(proxyInfoUrl("https://litellm.example/v1")).toBe("https://litellm.example/v1/model/info");
+  });
+
+  test("a successful fetch is cached; a non-OK response is not, and sends no token", async () => {
+    const calls: { url: string; authorization: string | null }[] = [];
+    const fetchImpl: FetchLike = async (input, init) => {
+      const headers = new Headers(init?.headers);
+      calls.push({ url: String(input), authorization: headers.get("authorization") });
+      if (calls.length === 1) return new Response("nope", { status: 503 });
+      return Response.json({ data: payload.data });
+    };
+    const cfg = testConfig({ proxyUrl: "http://litellm:4000/", proxyToken: "master" });
+    const fetcher = makeModelInfoFetcher(cfg, fetchImpl);
+
+    expect(await fetcher()).toEqual({ configured: false, models: [] });
+    const ok = await fetcher();
+    expect(ok.configured).toBe(true);
+    expect(ok.models.map((m) => m.name)).toEqual(["kept", "reasoner"]);
+    expect(await fetcher()).toEqual(ok);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toEqual({ url: "http://litellm:4000/model/info", authorization: "Bearer master" });
+    expect(calls[1]!.authorization).toBe("Bearer master");
+  });
+
+  test("a non-http proxy URL never calls fetch", async () => {
+    let called = false;
+    const fetcher = makeModelInfoFetcher(testConfig({ proxyUrl: "file:///tmp/x", proxyToken: "master" }), async () => {
+      called = true;
+      return new Response("no");
+    });
+    expect(await fetcher()).toEqual({ configured: false, models: [] });
+    expect(called).toBe(false);
   });
 });
 
@@ -77,7 +261,7 @@ describe("token mode", () => {
 
   test.each(API)("GET %s requires the token", async (path) => {
     expect((await srv.get(path)).status).toBe(401);
-    expect((await srv.get(`${path}&token=s3cret`)).status).toBe(200);
+    expect((await srv.get(`${path}&token=s3cret`)).status).toBe(401);
     expect((await srv.get(path, { headers: { Authorization: "Bearer s3cret" } })).status).toBe(200);
     expect((await srv.get(path, { headers: { Authorization: "Bearer wrong" } })).status).toBe(401);
   });
@@ -145,8 +329,30 @@ describe("login mode", () => {
     expect(res.status).toBe(401);
   });
 
-  test("the legacy token still works alongside login", async () => {
-    expect((await srv.get("/api/summary?token=tok")).status).toBe(200);
+  test("the bearer token works alongside login; a query token does not", async () => {
+    expect((await srv.get("/api/summary?token=tok")).status).toBe(401);
+    expect((await srv.get("/api/summary", { headers: { Authorization: "Bearer tok" } })).status).toBe(200);
+  });
+
+  test("a foreign Origin is rejected; a missing Origin is allowed", async () => {
+    const foreign = await login(srv, { username: "admin", password: "hunter2" }, { Origin: "https://evil.example" });
+    expect(foreign.status).toBe(403);
+    const noOrigin = await login(srv, { username: "admin", password: "hunter2" });
+    expect(noOrigin.status).toBe(303);
+    const logout = await srv.get("/api/logout", {
+      method: "POST",
+      headers: { Referer: "https://evil.example/phish" },
+    });
+    expect(logout.status).toBe(403);
+  });
+
+  test("an oversized login body is rejected before it is parsed", async () => {
+    const res = await srv.get("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "username=admin&password=hunter2&pad=" + "x".repeat(9 * 1024),
+    });
+    expect(res.status).toBe(413);
   });
 
   test("logout clears the cookie", async () => {

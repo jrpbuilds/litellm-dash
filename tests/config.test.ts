@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { authMode, configWarnings, DEFAULTS, loadConfig } from "../src/config";
+import { authMode, configWarnings, DEFAULTS, loadConfig, publicBindWithoutAuth } from "../src/config";
 
 describe("loadConfig", () => {
   test("defaults with an empty environment", () => {
@@ -27,6 +27,8 @@ describe("loadConfig", () => {
       LITELLM_DASH_SESSION_SECRET: "s",
       LITELLM_DASH_TOKEN: "t",
       LITELLM_DASH_TRUST_PROXY: "true",
+      LITELLM_DASH_PROXY_URL: "http://litellm:4000/",
+      LITELLM_DASH_PROXY_TOKEN: "mk",
     });
     expect(cfg).toEqual({
       host: "0.0.0.0",
@@ -39,6 +41,8 @@ describe("loadConfig", () => {
       sessionSecret: "s",
       token: "t",
       trustProxy: true,
+      proxyUrl: "http://litellm:4000/",
+      proxyToken: "mk",
     });
   });
 
@@ -72,5 +76,26 @@ describe("configWarnings", () => {
     expect(configWarnings(loadConfig({ HOST: "0.0.0.0" }))[0]).toContain("no authentication");
     expect(configWarnings(loadConfig({ HOST: "0.0.0.0", LITELLM_DASH_TOKEN: "t" }))).toEqual([]);
     expect(configWarnings(loadConfig({}))).toEqual([]);
+  });
+
+  test("open mode on a public interface is a refused bind; loopback and authed binds are not", () => {
+    expect(publicBindWithoutAuth(loadConfig({ HOST: "0.0.0.0" }))).toBe(true);
+    expect(publicBindWithoutAuth(loadConfig({ HOST: "192.168.1.1" }))).toBe(true);
+    expect(publicBindWithoutAuth(loadConfig({ HOST: "::" }))).toBe(true);
+    expect(publicBindWithoutAuth(loadConfig({}))).toBe(false);
+    expect(publicBindWithoutAuth(loadConfig({ HOST: "::1" }))).toBe(false);
+    expect(publicBindWithoutAuth(loadConfig({ HOST: "0.0.0.0", LITELLM_DASH_TOKEN: "t" }))).toBe(false);
+    expect(
+      publicBindWithoutAuth(loadConfig({ HOST: "0.0.0.0", LITELLM_DASH_USER: "u", LITELLM_DASH_PASSWORD: "p" })),
+    ).toBe(false);
+  });
+
+  test("proxy url without a token warns", () => {
+    expect(configWarnings(loadConfig({ LITELLM_DASH_PROXY_URL: "http://litellm:4000" }))[0]).toContain(
+      "LITELLM_DASH_PROXY_TOKEN",
+    );
+    expect(
+      configWarnings(loadConfig({ LITELLM_DASH_PROXY_URL: "http://litellm:4000", LITELLM_DASH_PROXY_TOKEN: "mk" })),
+    ).toEqual([]);
   });
 });

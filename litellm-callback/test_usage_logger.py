@@ -101,6 +101,20 @@ class TestLogger(unittest.TestCase):
         self.assertEqual(row["vision"], 0)
         self.assertIsNone(row["error"])
 
+    def test_db_file_is_owner_readable_only(self):
+        asyncio.run(self.logger.async_log_success_event(_kwargs(), None, None, None))
+        self.assertEqual(os.stat(self.path).st_mode & 0o777, 0o600)
+
+    def test_failure_row_redacts_secrets_then_truncates(self):
+        kwargs = _kwargs()
+        kwargs["exception"] = "upstream rejected sk-abcDEF123 and Bearer super-secret " + "x" * 600
+        asyncio.run(self.logger.async_log_failure_event(kwargs, None, None, None))
+        (row,) = self.rows()
+        self.assertNotIn("sk-abcDEF123", row["error"])
+        self.assertNotIn("super-secret", row["error"])
+        self.assertIn("[redacted]", row["error"])
+        self.assertEqual(len(row["error"]), ul._ERROR_MAX)
+
     def test_failure_row_truncates_error(self):
         kwargs = _kwargs(total_tokens=None, prompt_tokens=3, completion_tokens=None)
         kwargs["exception"] = "x" * 1000

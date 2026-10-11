@@ -77,6 +77,22 @@ describe("summary", () => {
     expect(q.summary(db, 7, NOW)).toMatchObject({ dbAvailable: false, requests: 0, tokens: 0 });
     expect(q.recent(db, {})).toEqual({ rows: [], hasMore: false });
   });
+  });
+
+/** Per-model usage over the window, the DB half of /api/models. */
+describe("modelUsage", () => {
+  test("groups by model_group across the window", () => {
+    // 3 alpha rows in the 7d window: 150 (today) + 7 (Mar 14) + 1000 (Mar 14 12:59,
+    // inside the 7d window that starts Mar 9) — the failure row has no tokens.
+    expect([...q.modelUsage(t.db, 7, NOW).entries()].sort(([a], [b]) => a.localeCompare(b))).toEqual([
+      ["alpha", { requests: 4, tokens: 150 + 7 + 1000 }],
+      ["beta", { requests: 2, tokens: 20 + 3 }],
+    ]);
+    // In the 1d window (starting Mar 14 13:00 UTC): today's 150 and Mar 14
+    // 13:00's explicit 7; the 12:59:59 failure row has zero tokens but counts
+    // as a request, and one seeded alpha row sits outside the 1d window.
+    expect(q.modelUsage(t.db, 1, NOW).get("alpha")).toEqual({ requests: 3, tokens: 150 + 7 });
+  });
 });
 
 describe("chart", () => {
@@ -164,6 +180,8 @@ describe("csv", () => {
     expect(csvField('a,"b"')).toBe('"a,""b"""');
     expect(csvField("=HYPERLINK(1)")).toBe("'=HYPERLINK(1)");
     expect(csvField("@sum")).toBe("'@sum");
+    expect(csvField("|cmd")).toBe("'|cmd");
+    expect(csvField(" =1+1")).toBe("' =1+1");
     expect(csvField("line\nbreak")).toBe('"line\nbreak"');
   });
 
@@ -174,6 +192,13 @@ describe("csv", () => {
     );
     expect(csv).toHaveLength(1 + 6);
     expect(csv.at(-1)).toContain(",failure,0,,,boom");
+  });
+
+  test("failuresOnly omits successes", () => {
+    const csv = q.exportCsv(t.db, 7, NOW, true).trimEnd().split("\n");
+    expect(csv).toHaveLength(2);
+    expect(csv[1]).toContain(",failure,");
+    expect(csv.join("\n")).not.toContain(",success,");
   });
 });
 

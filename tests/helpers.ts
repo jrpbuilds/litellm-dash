@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { RateLimiter } from "../src/auth";
 import { loadConfig, type Config } from "../src/config";
 import { UsageDb } from "../src/db";
+import type { ModelInfoFetcher, ModelInfoResult } from "../src/modelinfo";
 import { createServer } from "../src/server";
 
 /** The schema exactly as the Python callback creates it. */
@@ -34,6 +35,11 @@ export interface SeedRow {
 }
 
 /** A throwaway usage DB on disk (the dashboard opens it read-only by path). */
+/** Test stub matching the production fetcher's result shape. */
+export function stubModelInfo(result: ModelInfoResult | (() => Promise<ModelInfoResult>)): ModelInfoFetcher {
+  return typeof result === "function" ? result : async () => result;
+}
+
 export function tempUsageDb() {
   const dir = mkdtempSync(join(tmpdir(), "litellm-dash-test-"));
   const path = join(dir, "usage.db");
@@ -88,7 +94,10 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
 }
 
 /** Start an isolated server on a random port. */
-export async function startServer(cfg: Config, deps: { db?: UsageDb; limiter?: RateLimiter } = {}) {
+export async function startServer(
+  cfg: Config,
+  deps: { db?: UsageDb; limiter?: RateLimiter; modelInfo?: ModelInfoFetcher } = {},
+) {
   const server = Bun.serve({ ...(await createServer(cfg, deps)), hostname: "127.0.0.1", port: 0 });
   const url = (path: string) => new URL(path, server.url).toString();
   return {

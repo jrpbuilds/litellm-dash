@@ -103,11 +103,17 @@ async function getJson<T>(url: string): Promise<T | null> {
   }
 }
 
-/** Single 10s refresh loop; started once from boot. */
+/** Single 10s refresh loop; started once from boot. Hidden tabs skip the
+ * fetch; coming back triggers one immediate refresh instead of waiting. */
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 function startPolling() {
   if (pollTimer != null) return;
-  pollTimer = setInterval(refresh, 10_000);
+  pollTimer = setInterval(() => {
+    if (!document.hidden) void refresh();
+  }, 10_000);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) void refresh();
+  });
 }
 
 // ---------------------------------------------------------------- types
@@ -486,6 +492,32 @@ type RecentResp = {
   hasMore: boolean;
 };
 
+type ModelEntry = {
+  name: string;
+  provider: string | null;
+  upstream: string | null;
+  contextWindow: number | null;
+  maxOutput: number | null;
+  mode: string | null;
+  vision: boolean;
+  tools: boolean;
+  reasoning: boolean;
+  inputCost: number | null;
+  outputCost: number | null;
+  requests: number;
+  tokens: number;
+};
+
+type ModelsResp = {
+  days: number;
+  dbAvailable: boolean;
+  /** false when the proxy URL is unset, the scheme is not http(s), or the fetch failed */
+  proxyConfigured: boolean;
+  models: ModelEntry[];
+};
+
+let modelsCache: { days: number; resp: ModelsResp } | null = null;
+
 const PAGE_SIZE = 50;
 /** Which request row is expanded (mobile accordion — one at a time). */
 let expandedId: number | null = null;
@@ -633,8 +665,13 @@ function detailCard(r: RecentRow, type: string, tokens: number, group: string): 
   timing += kv("Logged", fmtFullDate(r.ts));
 
   const meta = [r.user_agent, r.requester_ip].filter(Boolean).map((s) => esc(s as string)).join(" · ");
+  const errText = r.error ?? "no error text recorded";
   return `<div class="detailcard">
-    ${failed ? `<div class="d-error"><span class="d-title">Error</span><pre class="errmsg">${esc(r.error ?? "no error text recorded")}</pre></div>` : ""}
+    ${
+      failed
+        ? `<div class="d-error"><div class="d-errorhead"><span class="d-title">Error</span><button type="button" class="btn d-copy" data-copy="${esc(errText)}">Copy</button></div><pre class="errmsg">${esc(errText)}</pre></div>`
+        : ""
+    }
     <div class="d-groups">
       <section class="d-group"><h4 class="d-title">Routing</h4>${routing}</section>
       <section class="d-group"><h4 class="d-title">Tokens</h4>${tokenRows}</section>
@@ -646,6 +683,79 @@ function detailCard(r: RecentRow, type: string, tokens: number, group: string): 
       ${meta ? `<span class="d-meta">${meta}</span>` : ""}
     </div>
   </div>`;
+}
+
+/** USD per 1M tokens from LiteLLM's per-token rates. `–` when unpriced. */
+function fmtPrice(costPerToken: number | null): string {
+  return costPerToken == null ? "–" : `$${(costPerToken * 1_000_000).toFixed(2).replace(/\.00$/, "")}`;
+}
+
+const CAP_ICONS: [boolean, string, string][] = [
+  [true, "reasoning", `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/></svg>`],
+  [true, "tools", `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4.5 4.5 0 0 0-6.09 5.9L3.3 17.5a2.1 2.1 0 0 0 3 3l5.3-5.31a4.5 4.5 0 0 0 5.9-6.09L14 12l-2-2z"/></svg>`],
+  [true, "vision", `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.06 12.35a1 1 0 0 1 0-.7C3.42 8.13 7.21 5 12 5s8.58 3.13 9.94 6.65a1 1 0 0 1 0 .7C20.58 15.87 16.79 19 12 19s-8.58-3.13-9.94-6.65Z"/><circle cx="12" cy="12" r="3"/></svg>`],
+];
+
+function renderModels(resp: ModelsResp) {
+  const grid = $("modelsgrid");
+  const sub = $("modelssub");
+  if (!resp.dbAvailable) {
+    grid.innerHTML = `<div class="models-none">usage.db not found. Model usage will appear once requests are logged.</div>`;
+    if (sub) sub.textContent = "Specs from the gateway; usage for the current period.";
+    return;
+  }
+  if (!resp.models.length) {
+    grid.innerHTML = `<div class="models-none">No requests in this period${resp.proxyConfigured ? "" : " and no gateway configured for model specs"}.</div>`;
+    return;
+  }
+  if (sub) sub.textContent = "Specs from the gateway; usage for the current period.";
+  grid.innerHTML = resp.models
+    .map((m) => {
+      const chips = [
+        m.contextWindow ? `<span class="mchip" title="Context window">ctx ${fmtTokens(m.contextWindow)}</span>` : "",
+        m.maxOutput ? `<span class="mchip" title="Max output tokens">out ${fmtTokens(m.maxOutput)}</span>` : "",
+        m.mode && m.mode !== "chat" ? `<span class="mchip">${esc(m.mode)}</span>` : "",
+      ]
+        .filter(Boolean)
+        .join("");
+      const caps = CAP_ICONS.filter(([, key]) => key === "reasoning" ? m.reasoning : key === "tools" ? m.tools : m.vision)
+        .map(([, key, svg]) => `<span class="mcap" title="${key}">${svg}</span>`)
+        .join("");
+      const priced = m.inputCost != null || m.outputCost != null;
+      const price = priced
+        ? `<div class="mprice"><span class="mkey">Price</span><span class="mval">${fmtPrice(m.inputCost)} in / ${fmtPrice(m.outputCost)} out per 1M</span></div>`
+        : "";
+      const usage = m.requests
+        ? `<span>${m.requests.toLocaleString()} req</span><span class="msep">·</span><span>${m.tokens ? fmtTokens(m.tokens) : "0"} tok</span>`
+        : `<span class="dim">no usage in this period</span>`;
+      return `<article class="modelcard">
+        <div class="mhead">
+          <span class="mname">${esc(m.name)}</span>
+          ${m.provider ? providerChip(m.provider) : ""}
+          ${caps ? `<span class="mcaps">${caps}</span>` : ""}
+        </div>
+        ${chips || m.upstream ? `<div class="mspecs">${chips}${m.upstream ? `<span class="mupstream" title="${esc(m.upstream)}">${esc(m.upstream)}</span>` : ""}</div>` : ""}
+        <div class="musage">${usage}</div>
+        ${price}
+      </article>`;
+    })
+    .join("");
+}
+
+async function refreshModels(days: number) {
+  if (modelsCache?.days === days) {
+    renderModels(modelsCache.resp);
+    return;
+  }
+  const grid = $("modelsgrid");
+  grid.innerHTML = `<div class="models-none skelbar">…</div>`;
+  const resp = await getJson<ModelsResp>(`/api/models?days=${days}`);
+  if (!resp) {
+    grid.innerHTML = `<div class="models-none">Failed to load models. Is the API reachable?</div>`;
+    return;
+  }
+  modelsCache = { days, resp };
+  renderModels(resp);
 }
 
 /** Append the next PAGE_SIZE older requests below what's already shown. */
@@ -663,7 +773,17 @@ async function loadMore() {
   }
   recentState.loadingMore = false;
   renderRecent();
+  updateRowCount();
 }
+
+/** The CSV export mirrors what the log table shows: the active period and,
+ * when the Failures filter is on, only failed rows. */
+function updateExportHref(days: number): void {
+  const params = new URLSearchParams({ days: String(days) });
+  if (recentState.failuresOnly) params.set("status", "failure");
+  $("export").setAttribute("href", `/api/export.csv?${params}`);
+}
+
 
 /** Build a /api/recent URL honouring the current failures filter. */
 function recentUrl(limit: number, beforeId?: number): string {
@@ -681,6 +801,7 @@ function setFailuresOnly(on: boolean) {
   document.querySelectorAll("#logfilter button").forEach((b) => {
     b.classList.toggle("active", (b as HTMLElement).dataset.filter === (on ? "failures" : "all"));
   });
+  updateExportHref(periodState.days);
   refreshLog();
 }
 
@@ -690,6 +811,7 @@ async function refreshLog() {
   recentState.rows = resp.rows;
   recentState.hasMore = resp.hasMore;
   renderRecent();
+  updateRowCount();
 }
 
 /**
@@ -699,27 +821,90 @@ async function refreshLog() {
  */
 function mergeRecent(fresh: RecentResp) {
   const maxId = recentState.rows[0]?.id ?? 0;
-  if (
-    maxId === 0 ||
-    fresh.rows.length === 0 ||
-    (fresh.rows[0]?.id ?? 0) < maxId
-  ) {
+  if (maxId === 0 || fresh.rows.length === 0 || (fresh.rows[0]?.id ?? 0) < maxId) {
     recentState.rows = fresh.rows;
     recentState.hasMore = fresh.hasMore;
     renderRecent();
+    updateRowCount();
     return;
   }
   const newer = fresh.rows.filter((r) => r.id > maxId);
   const changed = newer.length > 0 || (!fresh.hasMore && recentState.hasMore);
   if (newer.length) recentState.rows = [...newer, ...recentState.rows];
   if (!fresh.hasMore) recentState.hasMore = false;
-  if (changed) renderRecent();
+  if (changed) {
+    renderRecent();
+    updateRowCount();
+  }
+}
+
+/** Row counter + back-to-top under the log. Plain info, not an action:
+ * the count says what's loaded (grows as "Load more" pages in), and the link
+ * only appears once the newest row has scrolled out of view. */
+function updateRowCount() {
+  const foot = $("logfoot");
+  if (!foot) return;
+  const n = recentState.rows.length;
+  const hasLoadedRows = n > 0;
+  foot.hidden = !hasLoadedRows && !recentState.hasMore;
+  const count = $("rowcount");
+  if (count) {
+    count.textContent = `${n.toLocaleString()} request${n === 1 ? "" : "s"} shown · newest on top`;
+  }
+}
+
+/** Smooth-scroll back to the very top of the page. */
+function scrollToPageTop(): void {
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function wireTableScroll() {
+  const foot = $("logfoot");
+  if (!foot) return;
+  $("backtotop")?.addEventListener("click", scrollToPageTop);
+  const wrap = $<HTMLElement>("tablewrap");
+  if (wrap) {
+    wrap.addEventListener("scroll", updateRowCount);
+  }
+  window.addEventListener("scroll", () => {
+    // Newest row lives at the top of the table; hide the link when in view.
+    const top = $<HTMLElement>("tablewrap");
+    if (top) {
+      const rect = top.getBoundingClientRect();
+      const back = $("backtotop");
+      if (back) back.hidden = rect.top > -40;
+    }
+  });
+  updateRowCount();
 }
 
 // ---------------------------------------------------------------- refresh
 
+let activeView: "usage" | "models" = "usage";
+
+function setView(view: "usage" | "models") {
+  activeView = view;
+  document.querySelectorAll("#viewtoggle button").forEach((b) => {
+    b.classList.toggle("active", (b as HTMLElement).dataset.view === view);
+  });
+  const usage = $<HTMLElement>("usageview");
+  const models = $<HTMLElement>("modelsview");
+  if (usage) usage.hidden = view !== "usage";
+  if (models) models.hidden = view !== "models";
+  if (view === "models") void refreshModels(periodState.days);
+}
+
+document.querySelectorAll("#viewtoggle button").forEach((b) =>
+  b.addEventListener("click", () => setView((b as HTMLElement).dataset.view as "usage" | "models")),
+);
+
 async function refresh() {
   const days = periodState.days;
+  if (activeView === "models") {
+    void refreshModels(days);
+    $("updated").textContent = "";
+    return;
+  }
   const chartCard = document.querySelector<HTMLElement>(".chartcard");
   if (chartCard && !lastChart) chartCard.classList.add("skel");
   const [s, c, lat, r] = await Promise.all([
@@ -741,7 +926,7 @@ async function refresh() {
     recentState.latency = lat;
     if (firstLatency) renderRecent();
   }
-  $("export").setAttribute("href", `/api/export.csv?days=${days}`);
+  updateExportHref(days);
   $("updated").textContent = !s
     ? "API unreachable"
     : s.dbAvailable
@@ -756,6 +941,10 @@ function setDays(days: number) {
   document.querySelectorAll("#periods button").forEach((b) => {
     b.classList.toggle("active", Number((b as HTMLElement).dataset.days) === days);
   });
+  if (activeView === "models") {
+    void refreshModels(days);
+    return;
+  }
   refresh();
 }
 
@@ -819,6 +1008,7 @@ if (groupDD && groupMenu) {
 }
 window.addEventListener("resize", () => lastChart && renderChart(lastChart));
 wireChartHover();
+wireTableScroll();
 /** Expand the row under `target` (accordion: opening one closes the other).
  * Returns false when the target isn't inside a request row. */
 function toggleRow(target: HTMLElement): boolean {
@@ -835,13 +1025,55 @@ const recentTable = $("recent");
 if (recentTable) {
   recentTable.addEventListener("click", (e) => {
     const t = e.target as HTMLElement;
+    const copy = t.closest<HTMLElement>(".d-copy");
+    if (copy) {
+      copySnippet(copy);
+      e.stopPropagation();
+      return;
+    }
     if (t.closest("#loadmore")) return void loadMore();
     toggleRow(t);
   });
   recentTable.addEventListener("keydown", (e) => {
     if (e.key !== "Enter" && e.key !== " ") return;
+    if ((e.target as HTMLElement).closest(".d-copy")) return;
     if (toggleRow(e.target as HTMLElement)) e.preventDefault();
   });
+}
+
+/** Copy the error text from a detail-panel button; keeps working on plain-HTTP
+ * LAN deployments where navigator.clipboard is unavailable (insecure origin). */
+function copySnippet(btn: HTMLElement): void {
+  const text = btn.dataset.copy ?? "";
+  const done = () => {
+    btn.classList.add("copied");
+    btn.textContent = "Copied";
+    setTimeout(() => {
+      btn.classList.remove("copied");
+      btn.textContent = "Copy";
+    }, 1500);
+  };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done));
+  } else {
+    fallbackCopy(text, done);
+  }
+}
+
+function fallbackCopy(text: string, done: () => void): void {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.append(ta);
+  ta.select();
+  try {
+    document.execCommand("copy");
+    done();
+  } catch {
+    /* not copyable in this browser; leave the button as-is */
+  }
+  ta.remove();
 }
 document.querySelectorAll("#logfilter button").forEach((b) =>
   b.addEventListener("click", () =>
@@ -872,11 +1104,17 @@ function wireLoginForm(form: HTMLFormElement | null) {
 }
 
 function wireLogout(mode: string) {
-  const btn = $("logoutbtn");
+  const btn = $<HTMLButtonElement>("logoutbtn");
   if (!btn) return;
-  // Without a login there is no session to end.
+  // Open/token mode has no browser session to end; the dashboard is either
+  // public or the token lives in scripts — hide the control entirely.
   btn.hidden = mode !== "login";
+  if (mode !== "login") return;
   btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    btn.textContent = "Signing out…";
+    // Best-effort: even if the request fails, drop the user on the login page
+    // where a stale cookie shows them as signed out anyway.
     await fetch("/api/logout", { method: "POST" }).catch(() => null);
     location.assign("/login");
   });

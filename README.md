@@ -42,8 +42,10 @@ Set in `.env` (see [`.env.example`](.env.example)) or the process environment.
 | `LITELLM_DASH_USER` / `LITELLM_DASH_PASSWORD` | | Enables the login page |
 | `LITELLM_DASH_SESSION_TTL_DAYS` | `30` | "Remember me" duration |
 | `LITELLM_DASH_SESSION_SECRET` | derived from password | Cookie signing key |
-| `LITELLM_DASH_TOKEN` | | Shared secret for scripts (`?token=` or `Authorization: Bearer`) |
+| `LITELLM_DASH_TOKEN` | | Shared secret for scripts (`Authorization: Bearer` only) |
 | `LITELLM_DASH_TRUST_PROXY` | `0` | Trust `X-Forwarded-*` / `CF-Connecting-IP` headers |
+| `LITELLM_DASH_PROXY_URL` | | LiteLLM base URL for live model specs (`GET /model/info`) |
+| `LITELLM_DASH_PROXY_TOKEN` | | Master key for that fetch; only `http:` and `https:` URLs are called |
 
 Callback settings (set in the LiteLLM container):
 
@@ -55,11 +57,11 @@ Callback settings (set in the LiteLLM container):
 
 ## Authentication
 
-- **Open** (default): no auth. Keep it on localhost or a trusted network.
-- **Login**: set `LITELLM_DASH_USER` and `LITELLM_DASH_PASSWORD`. Failed logins are rate-limited to 5 per 15 minutes per IP. Changing the password signs everyone out unless `LITELLM_DASH_SESSION_SECRET` is set.
-- **Token**: set `LITELLM_DASH_TOKEN` for scripts and API clients. It works alongside login.
+- **Open** (default): no auth. The process refuses to listen on anything but loopback (`127.0.0.1`, `localhost`, `::1`) unless login or a token is set.
+- **Login**: set `LITELLM_DASH_USER` and `LITELLM_DASH_PASSWORD`. Failed logins are rate-limited to 5 per 15 minutes per IP. Changing the password signs everyone out unless `LITELLM_DASH_SESSION_SECRET` is set. Login and logout reject a cross-site `Origin` or `Referer`.
+- **Token**: set `LITELLM_DASH_TOKEN` for scripts and API clients. Send it as `Authorization: Bearer`; a `?token=` query parameter is ignored. It works alongside login.
 
-Behind a reverse proxy or Cloudflare Tunnel, set `LITELLM_DASH_TRUST_PROXY=1` so rate limiting sees real client IPs and cookies are marked `Secure`.
+Behind a reverse proxy or Cloudflare Tunnel, set `LITELLM_DASH_TRUST_PROXY=1` so rate limiting sees real client IPs and cookies are marked `Secure`. The proxy should also send `X-Frame-Options: DENY` and a `Content-Security-Policy` with `frame-ancestors 'none'` on `/` and `/login`; those two pages are Bun HTML bundles and cannot set response headers themselves. API responses already send those headers, plus `Cache-Control: no-store`.
 
 ## API
 
@@ -70,8 +72,9 @@ All `GET` endpoints take `days=1|7|30` (default 7) and require auth when enabled
 | `GET /api/summary` | Request and token totals |
 | `GET /api/chart?group=model\|provider` | Token totals per hour (1d) or day |
 | `GET /api/latency?group=model\|provider` | Count, average, p95 and max duration |
-| `GET /api/recent?limit=50&before_id=&status=failure` | Latest requests, newest first, paged by id |
-| `GET /api/export.csv` | All requests in the window |
+| `GET /api/recent?limit=50&before_id=&status=failure` | Latest requests, newest first, paged by id. Not limited to `days` |
+| `GET /api/export.csv?status=failure` | Requests in the window; `status=failure` omits successes |
+| `GET /api/models` | Advertised models merged with usage in the window |
 | `GET /api/session` | `{ authenticated, mode }`, 401 when signed out |
 | `POST /api/login` | Form fields `username`, `password`, `remember=on` |
 | `POST /api/logout` | Clears the session |

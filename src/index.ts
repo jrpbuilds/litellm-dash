@@ -1,4 +1,4 @@
-import { authMode, configWarnings, loadConfig } from "./config";
+import { authMode, configWarnings, loadConfig, publicBindWithoutAuth } from "./config";
 import { createServer } from "./server";
 import pkg from "../package.json";
 
@@ -9,6 +9,12 @@ if (!Bun.semver.satisfies(Bun.version, required)) {
 }
 
 const cfg = loadConfig();
+if (publicBindWithoutAuth(cfg)) {
+  console.error(
+    `refusing to listen on ${cfg.host} without authentication; set LITELLM_DASH_USER and LITELLM_DASH_PASSWORD, or LITELLM_DASH_TOKEN`,
+  );
+  process.exit(1);
+}
 for (const w of configWarnings(cfg)) console.warn(`warning: ${w}`);
 
 const server = Bun.serve(await createServer(cfg));

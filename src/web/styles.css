@@ -62,23 +62,15 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
   gap: 12px;
 }
 .headleft {
   min-width: 0;
-  flex: 1;
 }
 .headright {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 16px;
+  align-items: center;
   flex-shrink: 0;
-}
-.pagehead .headactions {
-  display: flex;
-  justify-content: flex-end;
 }
 h1 {
   margin: 0;
@@ -127,6 +119,24 @@ h1 {
     animation: none;
   }
 }
+/* Nav row under the header: page-level Usage|Models toggle left, period
+   filters right, both vertically centred. */
+.viewbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -2px 0 var(--space-section);
+}
+@media (max-width: 560px) {
+  .viewbar {
+    flex-wrap: wrap;
+    row-gap: 10px;
+    justify-content: center;
+  }
+}
+/* Period filters get their own full-width bar under the header so the toggle
+   can stay centred in the header itself. */
 .periods {
   display: inline-flex;
   gap: 6px;
@@ -491,6 +501,23 @@ h1 {
   transform: translateY(1px);
 }
 
+/* Sign out: quiet by default, red on hover to signal "ends the session". */
+.btn.signout {
+  color: var(--muted);
+  border-color: transparent;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+.btn.signout:hover {
+  color: #fca5a5;
+  background: rgba(255, 255, 255, 0.05);
+}
+.btn.signout[disabled] {
+  opacity: 0.6;
+  cursor: default;
+  transform: none;
+}
+
 
 /* --- login view ------------------------------------------------------ */
 .loginpage .loginform {
@@ -576,6 +603,31 @@ h1 {
 
 .tablewrap {
   overflow-x: auto;
+  position: relative;
+}
+.logfoot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.linkbtn {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  padding: 0;
+}
+.linkbtn:hover {
+  color: var(--text);
 }
 table.data {
   border-collapse: collapse;
@@ -654,6 +706,144 @@ tbody tr:hover {
 .pill.dim {
   color: var(--muted);
   background: rgba(255, 255, 255, 0.05);
+}
+
+/* Usage | Models view switch */
+.viewtoggle {
+  display: inline-flex;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 2px;
+}
+.viewtoggle button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 600 12px/1 inherit;
+  padding: 6px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.viewtoggle button:hover {
+  color: var(--text);
+}
+.viewtoggle button.active {
+  background: #2c2c33;
+  color: var(--text);
+}
+
+/* models grid */
+.modelsgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+.models-none {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  text-align: center;
+  padding: 34px 10px;
+  font-size: 13px;
+}
+.modelcard {
+  border: 1px solid var(--card-border);
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.modelcard .mhead {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.modelcard .mname {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.modelcard .mcaps {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: auto;
+  flex: none;
+}
+.modelcard .mcap {
+  color: var(--muted);
+  display: inline-flex;
+}
+.modelcard .mcaps .mcap:hover {
+  color: var(--text);
+}
+.modelcard .mspecs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.modelcard .mchip {
+  font-size: 10.5px;
+  color: color-mix(in srgb, var(--muted) 60%, var(--text));
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--card-border);
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.modelcard .mupstream {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.modelcard .musage {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.modelcard .msep {
+  color: var(--muted);
+}
+.modelcard .mprice {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  border-top: 1px solid var(--card-border);
+  padding-top: 9px;
+}
+.modelcard .mkey {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  flex: none;
+}
+.modelcard .mval {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.modelcard .dim {
+  color: var(--muted);
 }
 
 .tag {
@@ -819,6 +1009,22 @@ tr.mobilerow > td {
 }
 .detailcard .d-error .d-title {
   color: #fca5a5;
+}
+.detailcard .d-errorhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.detailcard .d-copy {
+  font-size: 10.5px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.detailcard .d-copy.copied {
+  color: #8fe6c7;
+  background: rgba(62, 207, 142, 0.1);
+  border-color: rgba(62, 207, 142, 0.3);
 }
 .detailcard .d-groups {
   display: grid;
