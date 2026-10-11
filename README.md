@@ -8,7 +8,7 @@ LiteLLM's built-in UI needs Postgres. This project needs nothing extra: a LiteLL
 
 ## Setup
 
-Requires [Bun](https://bun.sh) 1.2.3+ and a LiteLLM proxy with a writable data directory.
+Requires [Bun](https://bun.sh) 1.4+ and a LiteLLM proxy with a writable data directory.
 
 **1. Add the callback to LiteLLM.** Copy [`litellm-callback/usage_logger.py`](litellm-callback/usage_logger.py) next to your `config.yaml` and register it, then restart the proxy:
 

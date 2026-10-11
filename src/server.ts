@@ -29,18 +29,21 @@ export async function createServer(cfg: Config, deps: ServerDeps = {}) {
   const passwordHash = mode === "login" ? await Bun.password.hash(cfg.password) : "";
   const sessionSecret = cfg.sessionSecret || (passwordHash && deriveKey(passwordHash));
 
+  // Bun.serve joins repeated headers with ", ", so take the first entry.
+  const firstHeader = (req: Request, name: string): string | undefined =>
+    req.headers.get(name)?.split(",")[0].trim() || undefined;
+
   const clientIp = (req: Request, server: Server<undefined>): string => {
     if (cfg.trustProxy) {
-      const forwarded =
-        req.headers.get("cf-connecting-ip") ?? req.headers.get("x-forwarded-for")?.split(",")[0];
-      if (forwarded?.trim()) return forwarded.trim();
+      const forwarded = firstHeader(req, "cf-connecting-ip") ?? firstHeader(req, "x-forwarded-for");
+      if (forwarded) return forwarded;
     }
     return server.requestIP(req)?.address ?? "unknown";
   };
 
   const isHttps = (req: Request): boolean =>
     new URL(req.url).protocol === "https:" ||
-    (cfg.trustProxy && req.headers.get("x-forwarded-proto") === "https");
+    (cfg.trustProxy && firstHeader(req, "x-forwarded-proto") === "https");
 
   const tokenMatches = (req: Request): boolean => {
     if (!cfg.token) return false;

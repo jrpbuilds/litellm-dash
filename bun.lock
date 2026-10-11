@@ -1,11 +1,11 @@
 {
-  "lockfileVersion": 1,
+  "lockfileVersion": 2,
   "configVersion": 1,
   "workspaces": {
     "": {
       "name": "litellm-dash",
       "devDependencies": {
-        "@types/bun": "*",
+        "@types/bun": "^1.4.2",
         "typescript": "^5.9.0",
       },
     },

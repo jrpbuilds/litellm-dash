@@ -130,6 +130,16 @@ describe("login mode", () => {
     expect(setCookie).toContain("Secure");
   });
 
+  test("repeated forwarding headers use the first value", async () => {
+    const res = await login(
+      srv,
+      { username: "admin", password: "hunter2" },
+      { "X-Forwarded-Proto": "https, http", "CF-Connecting-IP": "192.0.2.7, 10.0.0.1" },
+    );
+    expect(res.status).toBe(303);
+    expect(res.headers.get("set-cookie")).toContain("Secure");
+  });
+
   test("a forged cookie is rejected", async () => {
     const res = await srv.get("/api/summary", { headers: { Cookie: `dash_session=1.9999999999999.${"A".repeat(43)}` } });
     expect(res.status).toBe(401);
