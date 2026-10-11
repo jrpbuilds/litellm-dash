@@ -220,8 +220,11 @@ function renderCards(s: Summary) {
     )
     .join("");
   const container = $("cards");
-  if (!container.childElementCount) {
-    container.innerHTML = fresh; // first paint: no crossfade
+  // First paint OR a skeleton pass left placeholders in place → replace the
+  // whole grid (the crossfade path below assumes real label/value nodes).
+  const skel = container.querySelector(".skelbar");
+  if (!container.childElementCount || skel) {
+    container.innerHTML = fresh;
     return;
   }
   // Polls every 10s: crossfade values that actually changed — DOM must not
