@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Gateway Usage · LiteLLM Dash</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <!-- stays hidden until app.ts confirms the session; otherwise it redirects to /login -->
+    <main class="page" id="dashboard" hidden>
+      <header class="pagehead">
+        <div class="headleft">
+          <h1><span class="statusdot" id="statusdot"></span>Gateway Usage</h1>
+          <p class="pagesub">Tokens, latency and provider routing through your LiteLLM proxy.</p>
+        </div>
+        <div class="headright">
+          <div class="headactions">
+            <button class="btn" id="logoutbtn" title="Sign out">Sign out</button>
+          </div>
+          <div class="periods" id="periods">
+            <button data-days="1">1d</button>
+            <button data-days="7" class="active">7d</button>
+            <button data-days="30">30d</button>
+          </div>
+        </div>
+      </header>
+
+      <section class="cards" id="cards"></section>
+
+      <section class="card chartcard">
+        <div class="cardhead">
+          <div>
+            <h2>Your Usage</h2>
+            <p class="sub">Your usage per day across this period.</p>
+          </div>
+          <div class="groupby" id="groupby">
+            <button class="gdd-btn" id="groupdd" aria-haspopup="listbox" aria-expanded="false">
+              <span class="gdd-label">Group by: <b id="groupdd-value">Model</b></span>
+              <span class="gdd-chev">▾</span>
+            </button>
+            <div class="gdd-menu" id="groupdd-menu" role="listbox" hidden>
+              <button role="option" data-group="model" class="active" aria-selected="true">Model</button>
+              <button role="option" data-group="provider" aria-selected="false">Provider</button>
+            </div>
+          </div>
+        </div>
+        <div class="chartwrap">
+          <div class="yaxis" id="yaxis"></div>
+          <div class="plot">
+            <canvas id="chart" width="0" height="0"></canvas>
+            <div class="gridlines" id="gridlines"></div>
+            <div class="xaxis" id="xaxis"></div>
+            <div class="tooltip" id="tooltip" hidden></div>
+          </div>
+        </div>
+        <div class="legend" id="legend"></div>
+      </section>
+
+      <section class="card tablecard">
+        <div class="cardhead">
+          <div>
+            <h2>Usage Log</h2>
+            <p class="sub">Most recent requests through the gateway. Times are in your local timezone.</p>
+          </div>
+          <div class="headactions">
+            <div class="logfilter" id="logfilter">
+              <button data-filter="all" class="active">All</button>
+              <button data-filter="failures">Failures</button>
+            </div>
+            <a class="btn" id="export" href="/api/export.csv?days=7">Export CSV</a>
+          </div>
+        </div>
+        <div class="tablewrap">
+          <table class="data" id="recent"></table>
+        </div>
+      </section>
+
+      <footer>
+        <span id="updated"></span>
+        <span class="sep">·</span>
+        <span>litellm-dash</span>
+      </footer>
+    </main>
+    <script type="module" src="./app.ts"></script>
+  </body>
+</html>

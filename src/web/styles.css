@@ -1,0 +1,1192 @@
+/* Cursor usage-page style: near-black page, tonal cards, quiet accents. */
+:root {
+  --bg: #0e0e10;
+  --card: #1a1a1f;
+  --card-border: #26262c;
+  --text: #f2f2f3;
+  --text-secondary: #e0e0e0;
+  --muted: #8a8a92;
+  --grid: #232329;
+  --ok: #3ecf8e;
+  --bad: #f87171;
+  --warn: #d9a25f;
+  --tooltip-bg: #111114;
+  --space-page: 20px;
+  --space-section: 20px;
+  --space-card: 18px 20px;
+  --space-card-head: 16px;
+  --space-table-cell-y: 12px;
+  --space-table-cell-x: 12px;
+}
+
+* {
+  box-sizing: border-box;
+}
+/* app.ts toggles elements via the `hidden` attribute; author display rules
+   like `.page { display:flex }` would otherwise beat the UA [hidden] rule. */
+[hidden] {
+  display: none !important;
+}
+html,
+body {
+  margin: 0;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--space-page) var(--space-page) 48px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-section);
+  animation: pagein 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes pagein {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* --- page head: title + period pills ------------------------------- */
+.pagehead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.headleft {
+  min-width: 0;
+  flex: 1;
+}
+.headright {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.pagehead .headactions {
+  display: flex;
+  justify-content: flex-end;
+}
+h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+}
+.pagesub,
+.sub {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.statusdot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex: none;
+  position: relative;
+}
+.statusdot.live {
+  background: var(--ok);
+  animation: dotpulse 2.4s ease-in-out infinite;
+}
+.statusdot.nodb {
+  background: var(--warn);
+}
+.statusdot.down {
+  background: var(--bad);
+}
+@keyframes dotpulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(62, 207, 142, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(62, 207, 142, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .statusdot.live {
+    animation: none;
+  }
+}
+.periods {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.periods button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 400 12.5px/1 inherit;
+  padding: 7px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.periods button:hover {
+  color: var(--text);
+}
+.periods button {
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.periods button.active {
+  background: #262626;
+  color: var(--text);
+}
+
+/* --- stat cards ------------------------------------------------------ */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+}
+.card {
+  background: var(--card);
+  border: 0;
+  border-radius: 10px;
+  padding: var(--space-card);
+  transition: background 0.15s ease;
+}
+.cards .card {
+  animation: cardin 0.3s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+.cards .card:nth-child(1) { animation-delay: 0.02s; }
+.cards .card:nth-child(2) { animation-delay: 0.07s; }
+.cards .card:nth-child(3) { animation-delay: 0.12s; }
+.cards .card:nth-child(4) { animation-delay: 0.17s; }
+@keyframes cardin {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.statcard .label {
+  color: #c9c9c9;
+  font-size: 13px;
+}
+.statcard .value {
+  font-size: 20px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  margin-top: 6px;
+  letter-spacing: -0.01em;
+  transition: opacity 0.18s ease;
+}
+.statcard .value.update {
+  opacity: 0.35;
+}
+.statcard .value.ok {
+  color: var(--ok);
+}
+.statcard .value.bad {
+  color: var(--bad);
+}
+
+/* --- chart card ------------------------------------------------------ */
+.cardhead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: var(--space-card-head);
+  position: relative;
+  z-index: 2;
+}
+@media (min-width: 641px) {
+  .tablecard .cardhead {
+    align-items: center;
+  }
+}
+.cardhead h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 500;
+}
+.groupby {
+  position: relative;
+  z-index: 3;
+}
+.groupby.open .gdd-menu {
+  z-index: 10;
+}
+/* Menu drops over the chart; don't let the canvas steal hovers/clicks underneath. */
+.chartcard:has(.groupby.open) .plot {
+  pointer-events: none;
+}
+.gdd-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #2e2e2e;
+  background: transparent;
+  color: var(--text-secondary);
+  font: 400 12.5px/1 inherit;
+  padding: 7px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.gdd-btn b {
+  font-weight: 500;
+  color: var(--text);
+}
+.gdd-chev {
+  color: var(--muted);
+  font-size: 10px;
+  transition: transform 0.15s ease;
+}
+.gdd-btn[aria-expanded="true"] .gdd-chev {
+  transform: rotate(180deg);
+}
+.gdd-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 140px;
+  background: #1f1f1f;
+  border: 1px solid #2e2e2e;
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  z-index: 8;
+  animation: gddin 0.13s ease;
+}
+@keyframes gddin {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.gdd-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: #c9c9c9;
+  font: 400 12.5px/1 inherit;
+  padding: 7px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.gdd-menu button:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+.gdd-menu button.active {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.chartcard,
+.tablecard {
+  padding: var(--space-card);
+}
+.chartcard.skel .chartwrap {
+  filter: blur(0.4px);
+  opacity: 0.5;
+  pointer-events: none;
+}
+.chartwrap {
+  display: flex;
+  gap: 8px;
+}
+.yaxis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  text-align: right;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 0 0 22px 0;
+  min-width: 44px;
+  font-variant-numeric: tabular-nums;
+}
+.plot {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+#chart {
+  display: block;
+  width: 100%;
+  height: 240px;
+}
+.gridlines {
+  position: absolute;
+  inset: 0 0 22px 0;
+  pointer-events: none;
+}
+.crosshair {
+  position: absolute;
+  top: 0;
+  bottom: 22px;
+  width: 1px;
+  background: linear-gradient(to bottom, rgba(255,255,255,0.14), rgba(255,255,255,0.02));
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.gridlines .h {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed var(--grid);
+}
+.xaxis {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 6px;
+  height: 16px;
+  overflow: hidden;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text);
+}
+.legend .item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 3px 8px;
+  border-radius: 999px;
+  transition: background 0.12s ease;
+}
+.legend .item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.legend .sw {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: none;
+}
+
+/* --- tooltip --------------------------------------------------------- */
+.tooltip {
+  position: absolute;
+  top: 0;
+  right: 0;
+  will-change: opacity, transform;
+  width: 260px;
+  background: var(--tooltip-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  z-index: 5;
+  pointer-events: none;
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+.tooltip .t-date {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.tooltip .t-sub {
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.tooltip .t-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+.tooltip .t-row .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.tooltip .t-row .m {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tooltip .t-row .v {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.tooltip .t-row .p {
+  color: var(--muted);
+  width: 48px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.tooltip .t-total {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid var(--card-border);
+  margin-top: 8px;
+  padding-top: 6px;
+}
+.tooltip .t-total .v {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.tooltip .t-total + .t-total.t-total-stack {
+  border-top: 0;
+  margin-top: 2px;
+  padding-top: 2px;
+}
+
+/* --- buttons / tables ------------------------------------------------ */
+.btn {
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid #2e2e2e;
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-size: 12.5px;
+  text-decoration: none;
+  flex: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+.btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: #3a3a3a;
+}
+.btn:active {
+  transform: translateY(1px);
+}
+
+
+/* --- login view ------------------------------------------------------ */
+.loginpage .loginform {
+  animation: loginin 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes loginin {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.loginpage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  max-width: none;
+  padding: 20px;
+}
+.loginform {
+  width: min(340px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px;
+}
+.loginform h1 {
+  font-size: 22px;
+  margin: 0;
+  display: block;
+}
+.loginform .pagesub {
+  margin: 4px 0 6px;
+}
+.loginform input {
+  background: var(--bg);
+  border: 1px solid var(--card-border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-family: inherit;
+}
+.loginform input:focus {
+  outline: 1px solid var(--ok);
+  border-color: var(--ok);
+}
+.loginform .remember {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.loginbtn {
+  background: var(--ok);
+  color: #0e0e10;
+  border: 0;
+  font-weight: 600;
+  padding: 10px;
+  font-size: 13px;
+}
+.loginbtn:hover {
+  background: #5adba4;
+}
+.loginbtn:active {
+  transform: translateY(1px);
+}
+.loginform .loginmsg {
+  transition: opacity 0.15s ease;
+}
+.loginmsg {
+  color: var(--bad);
+  font-size: 12px;
+  min-height: 18px;
+}
+
+.tablewrap {
+  overflow-x: auto;
+}
+table.data {
+  border-collapse: collapse;
+  width: 100%;
+}
+#recent {
+  min-width: 0; /* mobile hides columns via CSS; no forced h-scroll */
+}
+@media (min-width: 641px) {
+  #recent {
+    min-width: 660px;
+  }
+}
+th,
+td {
+  text-align: left;
+  padding: var(--space-table-cell-y) var(--space-table-cell-x);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  white-space: nowrap;
+}
+th:first-child,
+td:first-child {
+  padding-left: calc(var(--space-table-cell-x) + 2px);
+}
+th:last-child,
+td:last-child {
+  padding-right: calc(var(--space-table-cell-x) + 2px);
+}
+th {
+  color: var(--muted);
+  font-size: 12.5px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+thead th {
+  position: sticky;
+  top: 0;
+  background: var(--card);
+  z-index: 2;
+}
+td.num,
+th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+td.mut {
+  color: var(--muted);
+}
+td.name {
+  font-weight: 500;
+  line-height: 1.45;
+}
+tbody tr:hover {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.pill {
+  font-size: 11.5px;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-weight: 500;
+}
+.pill.ok {
+  color: #8fe6c7;
+  background: rgba(62, 207, 142, 0.12);
+}
+.pill.bad {
+  color: #fca5a5;
+  background: rgba(248, 113, 113, 0.12);
+}
+.pill.warn {
+  color: #ecc48a;
+  background: rgba(217, 162, 95, 0.14);
+}
+.pill.dim {
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.tag {
+  font-size: 10px;
+  color: var(--muted);
+  border: 1px solid var(--card-border);
+  border-radius: 999px;
+  padding: 1px 7px;
+  margin-left: 8px;
+  white-space: nowrap;
+}
+
+/* subtle vision marker after the model name in a log row */
+.vision-icon {
+  font-size: 11px;
+  margin-left: 6px;
+  vertical-align: middle;
+  opacity: 0.75;
+  cursor: help;
+}
+
+/* provider lozenges — self-colored from a stable hue of the name */
+.chip {
+  font-size: 10px;
+  border: 1px solid;
+  border-radius: 999px;
+  padding: 2px 8px;
+  margin-left: 10px;
+  white-space: nowrap;
+  font-weight: 500;
+  vertical-align: middle;
+}
+
+/* Mobile: the usage log has 7 columns and doesn't fit a phone viewport —
+   drop Type (redundant with the stream pill on desktop, and chat-stream
+   nuance matters less on small screens), Input/Output (keep Total), and
+   the provider chip, so rows read on one line. A tap on the row expands
+   an inline detail card carrying everything that was hidden. */
+@media (max-width: 640px) {
+  #recent th:nth-child(2),
+  #recent td:nth-child(2),
+  #recent th:nth-child(5),
+  #recent td:nth-child(5),
+  #recent th:nth-child(6),
+  #recent td:nth-child(6) {
+    display: none;
+  }
+  #recent .chip {
+    display: none;
+  }
+  /* On phones the column headers lie (duration cells show colored values
+     but the header truncates) — drop the header row; compact values are
+     self-evident and the expanded card carries full labels. */
+  #recent thead {
+    display: none;
+  }
+  #recent td {
+    padding-top: 9px;
+    padding-bottom: 9px;
+  }
+  tr.rowmain td:first-child {
+    width: 34%; /* date column breathes; model+tokens share the rest */
+  }
+  #recent td.num {
+    white-space: nowrap;
+  }
+  /* Column widths on mobile (4 visible cols). table-layout:fixed sizes
+     columns from the first row — thead is hidden, so widths are declared
+     per-cell and apply to the sizing row too. */
+  #recent {
+    table-layout: fixed;
+    width: 100%;
+  }
+  #recent td:nth-child(3) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #recent td:first-child {
+    width: 35.5%;
+  }
+  #recent td:nth-child(3) {
+    width: 31.5%;
+  }
+  #recent td:nth-child(4),
+  #recent td:nth-child(7) {
+    width: 15.5%;
+  }
+  /* absorbed subpixel rounding: prevent 2px phantom scroll */
+  .tablewrap {
+    overflow-x: clip;
+  }
+}
+
+/* Expandable rows: affordance + detail card (all viewports) */
+tr.rowmain.tappable {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+tr.rowmain.tappable td:first-child {
+  position: relative;
+}
+/* subtle chevron after the date — signals expandability, flips when open */
+tr.rowmain.tappable td:first-child::after {
+  content: "›";
+  display: inline-block;
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  transition: transform 0.18s ease;
+  transform-origin: 50% 50%;
+}
+tr.rowmain.tappable[aria-expanded="true"] td:first-child::after {
+  transform: rotate(90deg);
+}
+/* Open row reads instantly: hairline accent on the left + lifted bg. */
+tr.rowmain.tappable[aria-expanded="true"] td:first-child {
+  box-shadow: inset 3px 0 0 var(--ok);
+}
+tr.rowmain.tappable[aria-expanded="true"] td {
+  background: rgba(255, 255, 255, 0.03);
+}
+tr.rowmain.tappable:active {
+  background: rgba(255, 255, 255, 0.05);
+}
+tr.rowmain.tappable:focus-visible {
+  outline: 1px solid var(--ok);
+  outline-offset: -1px;
+}
+tr.mobilerow > td {
+  border-bottom: 1px solid rgba(38, 38, 44, 0.7);
+  padding: 0 10px 12px;
+  animation: rowreveal 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes rowreveal {
+  from {
+    opacity: 0;
+    clip-path: inset(0 0 100% 0);
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0% 0);
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  tr.mobilerow > td {
+    animation: none;
+  }
+}
+
+/* The detail card itself (shared visuals, mobile-only placement) */
+.detailcard {
+  max-width: 720px;
+  background: color-mix(in srgb, var(--bg) 88%, #ffffff);
+  border: 1px solid color-mix(in srgb, var(--card-border) 70%, #ffffff);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 2px;
+  animation: detailin 0.18s ease;
+}
+@keyframes detailin {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .detailcard {
+    animation: none;
+  }
+}
+.detailcard .d-head {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.detailcard .d-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px 20px;
+}
+@media (max-width: 640px) {
+  .detailcard .d-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 14px;
+  }
+}
+.detailcard .d-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.detailcard .d-label {
+  color: color-mix(in srgb, var(--muted) 78%, var(--text));
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+.detailcard .d-value {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Status gets a real pill; duration reuses the latency traffic lights. */
+.detailcard .d-value.lat-good,
+.detailcard .d-value.lat-mid,
+.detailcard .d-value.lat-slow,
+.detailcard .d-value.lat-bad {
+  font-size: 13px;
+}
+.detailcard .d-status {
+  align-self: flex-start;
+  margin-top: 1px;
+}
+/* Provider renders as the same colored chip used elsewhere on the page. */
+.detailcard .d-value.d-provider {
+  color: hsl(var(--h, 220) 70% 75%);
+  background: hsl(var(--h, 220) 60% 20% / 0.55);
+  border: 1px solid hsl(var(--h, 220) 60% 50% / 0.35);
+  border-radius: 999px;
+  padding: 1px 9px;
+  font-size: 11px;
+  font-weight: 500;
+  width: fit-content;
+  max-width: 100%;
+}
+.detailcard .d-client {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--card-border);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.detailcard .d-client .d-label {
+  flex: none;
+}
+.detailcard .d-client-name {
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 500;
+  flex: none;
+}
+.detailcard .d-meta {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.detailcard .errmsg {
+  margin-top: 10px;
+}
+.chip-tt {
+  margin-left: 6px;
+  flex: none;
+}
+
+/* log filter toggle + failed-request error rows */
+.headactions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.logfilter {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.logfilter button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 400 12.5px/1 inherit;
+  padding: 7px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.logfilter button:hover {
+  color: var(--text);
+}
+.logfilter button.active {
+  background: #262626;
+  color: var(--text);
+}
+.visionfilter.active {
+  background: #262626;
+  color: var(--text);
+}
+.pill.clickable {
+  cursor: pointer;
+}
+.pill.clickable:hover {
+  filter: brightness(1.2);
+}
+
+/* per-request duration traffic lights — same hues as before, mixed 65/35
+   with the page's muted gray so they read without shouting; sized below
+   the row text so the value reads as a secondary detail */
+.lat-good,
+.lat-mid,
+.lat-slow,
+.lat-bad {
+  font-size: 12px;
+}
+.lat-good {
+  color: color-mix(in srgb, #6ee7a8 65%, var(--muted));
+}
+.lat-mid {
+  color: color-mix(in srgb, #ecc48a 65%, var(--muted));
+}
+.lat-slow {
+  color: color-mix(in srgb, #f0a35e 65%, var(--muted));
+}
+.lat-bad {
+  color: color-mix(in srgb, #f87171 65%, var(--muted));
+}
+
+/* hover target around each duration value; reveals the group's
+   avg/p95/n on hover or keyboard focus, no extra surface otherwise */
+.lat-tip {
+  position: relative;
+  cursor: default;
+}
+.lat-pop {
+  position: absolute;
+  right: 0;
+  top: -40px;
+  max-width: 70vw;
+  white-space: nowrap;
+  background: var(--tooltip-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+  z-index: 6;
+}
+.lat-tip:hover .lat-pop,
+.lat-tip:focus-visible .lat-pop {
+  opacity: 1;
+}
+tr.failed > td {
+  border-bottom: 0;
+}
+tr.failed td:first-child {
+  box-shadow: inset 3px 0 0 rgba(248, 113, 113, 0.85);
+}
+tr.errrow > td {
+  border-bottom: 1px solid rgba(38, 38, 44, 0.7);
+  padding: 0 10px 10px;
+}
+.errmsg {
+  margin: 0;
+  padding: 10px 12px;
+  animation: detailin 0.18s ease;
+  color: #fca5a5;
+  background: rgba(248, 113, 113, 0.07);
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  border-radius: 8px;
+  font: 12px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  text-align: left;
+  max-width: 720px;
+}
+
+.empty {
+  color: var(--muted);
+  text-align: center;
+  padding: 26px !important;
+  font-size: 13px;
+}
+
+td.loadmore {
+  text-align: center;
+  border-bottom: 0;
+  padding: 14px 10px;
+}
+button.btn {
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+button.btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+button.btn.loading {
+  position: relative;
+  color: transparent;
+}
+button.btn.loading::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--muted);
+  border-top-color: transparent;
+  animation: btnspin 0.7s linear infinite;
+}
+@keyframes btnspin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* softer spin curve */
+@keyframes btnspinsoft {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+footer {
+  color: var(--muted);
+  font-size: 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+footer a {
+  color: var(--text);
+  text-decoration: none;
+  border-bottom: 1px solid var(--card-border);
+}
+.sep {
+  opacity: 0.5;
+}
+
+@media (max-width: 640px) {
+  .yaxis {
+    min-width: 34px;
+  }
+  .tooltip {
+    width: 210px;
+  }
+}
+
+
+/* First-load skeletons: soft pulsing bars where the real values land. */
+.skelbar {
+  display: block;
+  height: 14px;
+  width: 70%;
+  border-radius: 6px;
+  border: 0;
+  background: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0.05) 40%,
+    rgba(255, 255, 255, 0.11) 50%,
+    rgba(255, 255, 255, 0.05) 60%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+.skelbar.wide {
+  height: 22px;
+  width: 45%;
+  margin-top: 6px;
+}
+.statcard.skel .label {
+  min-height: 14px;
+}
+tr.skelrow td {
+  padding: 12px 10px;
+}
+tr.skelrow:nth-child(2) .skelbar { animation-delay: 0.06s; }
+tr.skelrow:nth-child(3) .skelbar { animation-delay: 0.12s; }
+tr.skelrow:nth-child(4) .skelbar { animation-delay: 0.18s; }
+tr.skelrow:nth-child(5) .skelbar { animation-delay: 0.24s; }
+tr.skelrow:nth-child(6) .skelbar { animation-delay: 0.30s; }
+tr.skelrow .skelbar {
+  height: 12px;
+}
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skelbar {
+    animation: none;
+    background: rgba(255, 255, 255, 0.07);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Appended (load-more) rows slide in from below */
+tr.rowmain.rowin {
+  animation: appendin 0.3s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+@keyframes appendin {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
