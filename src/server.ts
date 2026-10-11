@@ -10,31 +10,50 @@ import { authMode, type Config } from "./config";
 import { makeModelInfoFetcher, type ModelInfo, type ModelInfoFetcher } from "./modelinfo";
 import * as q from "./db";
 
+type ModelCard = ModelInfo & q.ModelUsage & { retired: boolean };
+
+const NO_USAGE: q.ModelUsage = {
+  requests: 0,
+  tokens: 0,
+  outputTokPerSec: null,
+  failures: 0,
+  logProviders: [],
+  logUpstreams: [],
+};
+
 /** Merges the advertised model list with per-model usage over the window.
- * Advertised-but-never-called models get zero usage; called-but-unadvertised
- * models still appear so the view matches the log. */
+ * Advertised-but-never-called models get zero usage. A name only in the log
+ * is retired when the catalog was fetched — it left the gateway, so it must
+ * not be offered as a copyable client id. With no catalog, it is just usage. */
 async function buildModelsPayload(db: q.UsageDb, modelInfo: ModelInfoFetcher, days: q.Days) {
   const [info, usage] = await Promise.all([
     modelInfo().catch(() => ({ configured: false, models: [] as ModelInfo[] })),
     Promise.resolve(q.modelUsage(db, days)),
   ]);
-  const models: (ModelInfo & { requests: number; tokens: number })[] = [];
+  const models: ModelCard[] = [];
   const seen = new Set<string>();
   for (const m of info.models) {
     seen.add(m.name);
-    const u = usage.get(m.name) ?? { requests: 0, tokens: 0 };
-    models.push({ ...m, requests: u.requests, tokens: u.tokens });
+    models.push({ ...m, ...(usage.get(m.name) ?? NO_USAGE), retired: false });
   }
-  // Models with traffic but no /model/info entry (proxy unreachable, or the
-  // row predates the model's registration) are listed with usage only.
   for (const [name, u] of usage) {
-    if (!seen.has(name)) models.push(blankModel(name, u));
+    if (!seen.has(name)) models.push({ ...blankModel(name), ...u, retired: info.configured });
   }
-  models.sort((a, b) => b.tokens - a.tokens || b.requests - a.requests || a.name.localeCompare(b.name));
+  models.sort(bySpeed);
   return { days, dbAvailable: db.available, proxyConfigured: info.configured, models };
 }
 
-function blankModel(name: string, u: { requests: number; tokens: number }): ModelInfo & { requests: number; tokens: number } {
+/** Fastest output rate first, then advertised names, then retired ones. */
+function bySpeed(a: ModelCard, b: ModelCard): number {
+  const tier = (m: ModelCard) => (m.retired ? 2 : m.outputTokPerSec == null ? 1 : 0);
+  return (
+    tier(a) - tier(b) ||
+    (b.outputTokPerSec ?? 0) - (a.outputTokPerSec ?? 0) ||
+    a.name.localeCompare(b.name)
+  );
+}
+
+function blankModel(name: string): ModelInfo {
   return {
     name,
     provider: null,
@@ -47,8 +66,6 @@ function blankModel(name: string, u: { requests: number; tokens: number }): Mode
     reasoning: false,
     inputCost: null,
     outputCost: null,
-    requests: u.requests,
-    tokens: u.tokens,
   };
 }
 

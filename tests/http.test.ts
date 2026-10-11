@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { RateLimiter } from "../src/auth";
-import { makeModelInfoFetcher, parseModels, proxyInfoUrl, type FetchLike } from "../src/modelinfo";
+import { makeModelInfoFetcher, parseModels, proxyOrigin, type FetchLike } from "../src/modelinfo";
 import { iso, startServer, stubModelInfo, tempUsageDb, testConfig } from "./helpers";
 
 let data: ReturnType<typeof tempUsageDb>;
@@ -129,6 +129,11 @@ describe("models endpoint", () => {
           outputCost: 4.4e-7,
           requests: 1,
           tokens: 10,
+          outputTokPerSec: 5,
+          failures: 0,
+          logProviders: [],
+          logUpstreams: [],
+          retired: false,
         },
         {
           name: "never-called",
@@ -144,6 +149,11 @@ describe("models endpoint", () => {
           outputCost: null,
           requests: 0,
           tokens: 0,
+          outputTokPerSec: null,
+          failures: 0,
+          logProviders: [],
+          logUpstreams: [],
+          retired: false,
         },
       ]);
     } finally {
@@ -151,7 +161,7 @@ describe("models endpoint", () => {
     }
   });
 
-  test("a called-but-unadvertised model still appears", async () => {
+  test("a called-but-unadvertised model is retired when the catalog was fetched", async () => {
     const srv = await startServer(testConfig(), {
       db: data.db,
       modelInfo: stubModelInfo({ configured: true, models: [] }),
@@ -160,7 +170,7 @@ describe("models endpoint", () => {
       const body = await (await srv.get("/api/models?days=7")).json();
       expect(body.proxyConfigured).toBe(true);
       expect(body.models).toEqual([
-        expect.objectContaining({ name: "alpha", requests: 1, tokens: 10 }),
+        expect.objectContaining({ name: "alpha", requests: 1, tokens: 10, retired: true }),
       ]);
     } finally {
       srv.stop();
@@ -178,7 +188,7 @@ describe("models endpoint", () => {
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.proxyConfigured).toBe(false);
-      expect(body.models).toEqual([expect.objectContaining({ name: "alpha" })]);
+      expect(body.models).toEqual([expect.objectContaining({ name: "alpha", retired: false })]);
     } finally {
       srv.stop();
     }
@@ -215,32 +225,57 @@ describe("model info fetcher", () => {
     expect(models[1]).toMatchObject({ reasoning: true, provider: null });
   });
 
-  test("only http(s) proxy URLs are fetched", () => {
-    expect(proxyInfoUrl("")).toBeNull();
-    expect(proxyInfoUrl("file:///etc/passwd")).toBeNull();
-    expect(proxyInfoUrl("http://litellm:4000/")).toBe("http://litellm:4000/model/info");
-    expect(proxyInfoUrl("https://litellm.example/v1")).toBe("https://litellm.example/v1/model/info");
+  test("parses the public /v1/models list without treating owned_by as the provider", () => {
+    const models = parseModels({
+      data: [
+        { id: "glm-5.3", owned_by: "openai", mode: "chat", max_input_tokens: 1_000_000, max_output_tokens: 128_000 },
+        { id: "unused" },
+      ],
+    });
+    expect(models).toEqual([
+      expect.objectContaining({
+        name: "glm-5.3",
+        provider: null,
+        mode: "chat",
+        contextWindow: 1_000_000,
+        maxOutput: 128_000,
+      }),
+      expect.objectContaining({ name: "unused", contextWindow: null, maxOutput: null }),
+    ]);
   });
 
-  test("a successful fetch is cached; a non-OK response is not, and sends no token", async () => {
+  test("only http(s) proxy URLs are fetched", () => {
+    expect(proxyOrigin("")).toBeNull();
+    expect(proxyOrigin("file:///etc/passwd")).toBeNull();
+    expect(proxyOrigin("http://litellm:4000/")).toBe("http://litellm:4000");
+    expect(proxyOrigin("https://litellm.example/v1")).toBe("https://litellm.example");
+  });
+
+  test("the public list is fetched without a token; /model/info failure still returns it", async () => {
     const calls: { url: string; authorization: string | null }[] = [];
     const fetchImpl: FetchLike = async (input, init) => {
       const headers = new Headers(init?.headers);
-      calls.push({ url: String(input), authorization: headers.get("authorization") });
-      if (calls.length === 1) return new Response("nope", { status: 503 });
-      return Response.json({ data: payload.data });
+      const url = String(input);
+      calls.push({ url, authorization: headers.get("authorization") });
+      if (url.endsWith("/v1/models")) {
+        return Response.json({
+          data: [{ id: "listed", mode: "chat", max_input_tokens: 8000 }, { id: "enriched" }],
+        });
+      }
+      return new Response("nope", { status: 401 });
     };
-    const cfg = testConfig({ proxyUrl: "http://litellm:4000/", proxyToken: "master" });
+    const cfg = testConfig({ proxyUrl: "https://litellm.example/v1", proxyToken: "master" });
     const fetcher = makeModelInfoFetcher(cfg, fetchImpl);
 
-    expect(await fetcher()).toEqual({ configured: false, models: [] });
     const ok = await fetcher();
     expect(ok.configured).toBe(true);
-    expect(ok.models.map((m) => m.name)).toEqual(["kept", "reasoner"]);
+    expect(ok.models.map((m) => m.name)).toEqual(["listed", "enriched"]);
+    expect(ok.models[0]).toMatchObject({ contextWindow: 8000, mode: "chat", provider: null });
     expect(await fetcher()).toEqual(ok);
-    expect(calls).toHaveLength(2);
-    expect(calls[0]).toEqual({ url: "http://litellm:4000/model/info", authorization: "Bearer master" });
-    expect(calls[1]!.authorization).toBe("Bearer master");
+    expect(calls).toEqual([
+      { url: "https://litellm.example/v1/models", authorization: null },
+      { url: "https://litellm.example/model/info", authorization: "Bearer master" },
+    ]);
   });
 
   test("a non-http proxy URL never calls fetch", async () => {

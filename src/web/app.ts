@@ -506,6 +506,12 @@ type ModelEntry = {
   outputCost: number | null;
   requests: number;
   tokens: number;
+  outputTokPerSec: number | null;
+  failures: number;
+  logProviders: string[];
+  logUpstreams: string[];
+  /** In the log but no longer advertised. Only set when the catalog was fetched. */
+  retired: boolean;
 };
 
 type ModelsResp = {
@@ -650,6 +656,7 @@ function detailCard(r: RecentRow, type: string, tokens: number, group: string): 
     tokenRow("Input", r.prompt_tokens, tokens, "in"),
     tokenRow("Output", r.completion_tokens, tokens, "out"),
     kv("Total", tokens ? fmtTokens(tokens) : "–", "strong"),
+    kv("Speed", requestSpeed(r, group)),
   ].join("");
 
   const stats = recentState.latency?.rows.find((s) => s.name === group);
@@ -685,10 +692,28 @@ function detailCard(r: RecentRow, type: string, tokens: number, group: string): 
   </div>`;
 }
 
+/** Output tokens per second. `–` when the request failed or has no duration. */
+function fmtTokPerSec(n: number | null): string {
+  if (n == null || !Number.isFinite(n)) return "–";
+  return n >= 100 ? `${Math.round(n)} tok/s` : `${n.toFixed(1)} tok/s`;
+}
+
+/** This request's output rate, with the model's period rate beside it. */
+function requestSpeed(r: RecentRow, group: string): string {
+  const failed = r.status !== "success" || r.duration_ms == null || r.duration_ms <= 0;
+  const rate = failed ? null : (r.completion_tokens / r.duration_ms!) * 1000;
+  const model = modelsCache?.resp.models.find((m) => m.name === group)?.outputTokPerSec;
+  const usual = model != null ? ` <span class="dim">${fmtTokPerSec(model)} usual</span>` : "";
+  return `${fmtTokPerSec(rate)}${usual}`;
+}
+
 /** USD per 1M tokens from LiteLLM's per-token rates. `–` when unpriced. */
 function fmtPrice(costPerToken: number | null): string {
   return costPerToken == null ? "–" : `$${(costPerToken * 1_000_000).toFixed(2).replace(/\.00$/, "")}`;
 }
+
+const COPY_ICON = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>`;
+const CHECK_ICON = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>`;
 
 const CAP_ICONS: [boolean, string, string][] = [
   [true, "reasoning", `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/></svg>`],
@@ -705,41 +730,66 @@ function renderModels(resp: ModelsResp) {
     return;
   }
   if (!resp.models.length) {
-    grid.innerHTML = `<div class="models-none">No requests in this period${resp.proxyConfigured ? "" : " and no gateway configured for model specs"}.</div>`;
+    grid.innerHTML = `<div class="models-none">${
+      resp.proxyConfigured
+        ? "No models advertised by the gateway."
+        : "No requests in this period, and no gateway configured for the model list."
+    }</div>`;
     return;
   }
-  if (sub) sub.textContent = "Specs from the gateway; usage for the current period.";
-  grid.innerHTML = resp.models
-    .map((m) => {
-      const chips = [
-        m.contextWindow ? `<span class="mchip" title="Context window">ctx ${fmtTokens(m.contextWindow)}</span>` : "",
-        m.maxOutput ? `<span class="mchip" title="Max output tokens">out ${fmtTokens(m.maxOutput)}</span>` : "",
-        m.mode && m.mode !== "chat" ? `<span class="mchip">${esc(m.mode)}</span>` : "",
-      ]
-        .filter(Boolean)
-        .join("");
-      const caps = CAP_ICONS.filter(([, key]) => key === "reasoning" ? m.reasoning : key === "tools" ? m.tools : m.vision)
-        .map(([, key, svg]) => `<span class="mcap" title="${key}">${svg}</span>`)
-        .join("");
-      const priced = m.inputCost != null || m.outputCost != null;
-      const price = priced
-        ? `<div class="mprice"><span class="mkey">Price</span><span class="mval">${fmtPrice(m.inputCost)} in / ${fmtPrice(m.outputCost)} out per 1M</span></div>`
-        : "";
-      const usage = m.requests
-        ? `<span>${m.requests.toLocaleString()} req</span><span class="msep">·</span><span>${m.tokens ? fmtTokens(m.tokens) : "0"} tok</span>`
-        : `<span class="dim">no usage in this period</span>`;
-      return `<article class="modelcard">
-        <div class="mhead">
-          <span class="mname">${esc(m.name)}</span>
-          ${m.provider ? providerChip(m.provider) : ""}
-          ${caps ? `<span class="mcaps">${caps}</span>` : ""}
-        </div>
-        ${chips || m.upstream ? `<div class="mspecs">${chips}${m.upstream ? `<span class="mupstream" title="${esc(m.upstream)}">${esc(m.upstream)}</span>` : ""}</div>` : ""}
-        <div class="musage">${usage}</div>
-        ${price}
-      </article>`;
-    })
+  if (sub) {
+    sub.textContent = resp.proxyConfigured
+      ? "Every model on the gateway; usage for the current period."
+      : "Usage for the current period. Set LITELLM_DASH_PROXY_URL to list models that have not been called.";
+  }
+  grid.innerHTML = resp.models.map((m) => modelCard(m)).join("");
+}
+
+/** A chunky panel per model: identity on the left, labelled stats on the right. */
+function modelCard(m: ModelEntry): string {
+  const providers = m.provider ? [m.provider] : m.logProviders;
+  const upstreams = m.upstream ? [m.upstream] : m.logUpstreams;
+  const caps = CAP_ICONS.filter(([, key]) => (key === "reasoning" ? m.reasoning : key === "tools" ? m.tools : m.vision))
+    .map(([, key, svg]) => `<span class="mcap" title="${key}">${svg}</span>`)
     .join("");
+  const copy = m.retired
+    ? `<span class="mremoved" title="No longer advertised by the gateway">removed</span>`
+    : `<button type="button" class="mcopy" data-copy="${esc(m.name)}" title="Copy model name" aria-label="Copy ${esc(m.name)}">${COPY_ICON}</button>`;
+  const dash = `<span class="dim">–</span>`;
+  const stat = (label: string, value: string, cls = "") =>
+    `<div class="mstat${cls ? ` ${cls}` : ""}"><span class="mlab">${label}</span><span class="mval">${value}</span></div>`;
+  const price =
+    m.inputCost != null || m.outputCost != null
+      ? `<span class="mprice">${fmtPrice(m.inputCost)} in · ${fmtPrice(m.outputCost)} out</span>`
+      : "";
+  return `<article class="modelrow${m.retired ? " retired" : ""}">
+    <div class="mident">
+      <div class="mhead">
+        <span class="mname">${esc(m.name)}</span>
+        ${caps ? `<span class="mcaps">${caps}</span>` : ""}
+        ${copy}
+      </div>
+      ${providers.length ? `<div class="mchips">${providers.map(providerChip).join("")}</div>` : ""}
+      ${upstreams.length ? `<div class="mup">${upstreams.map((u) => `<span>${esc(u)}</span>`).join("")}</div>` : ""}
+      ${price}
+    </div>
+    <div class="mstats">
+      ${stat("Requests", m.requests ? m.requests.toLocaleString() : dash)}
+      ${stat("Tokens", m.tokens ? fmtTokens(m.tokens) : dash)}
+      ${stat("Speed", m.outputTokPerSec != null ? fmtTokPerSec(m.outputTokPerSec) : dash)}
+      ${stat("Failed", m.failures ? String(m.failures) : dash, m.failures ? "bad" : "")}
+      ${stat("Context", m.contextWindow ? fmtTokens(m.contextWindow) : dash)}
+      ${stat("Max out", m.maxOutput ? fmtTokens(m.maxOutput) : dash)}
+    </div>
+  </article>`;
+}
+
+const modelsGrid = $("modelsgrid");
+if (modelsGrid) {
+  modelsGrid.addEventListener("click", (e) => {
+    const copy = (e.target as HTMLElement).closest<HTMLElement>(".mcopy");
+    if (copy) copySnippet(copy);
+  });
 }
 
 async function refreshModels(days: number) {
@@ -1045,12 +1095,15 @@ if (recentTable) {
  * LAN deployments where navigator.clipboard is unavailable (insecure origin). */
 function copySnippet(btn: HTMLElement): void {
   const text = btn.dataset.copy ?? "";
+  const icon = btn.classList.contains("mcopy");
   const done = () => {
     btn.classList.add("copied");
-    btn.textContent = "Copied";
+    if (icon) btn.innerHTML = CHECK_ICON;
+    else btn.textContent = "Copied";
     setTimeout(() => {
       btn.classList.remove("copied");
-      btn.textContent = "Copy";
+      if (icon) btn.innerHTML = COPY_ICON;
+      else btn.textContent = "Copy";
     }, 1500);
   };
   if (navigator.clipboard && window.isSecureContext) {

@@ -44,8 +44,8 @@ Set in `.env` (see [`.env.example`](.env.example)) or the process environment.
 | `LITELLM_DASH_SESSION_SECRET` | derived from password | Cookie signing key |
 | `LITELLM_DASH_TOKEN` | | Shared secret for scripts (`Authorization: Bearer` only) |
 | `LITELLM_DASH_TRUST_PROXY` | `0` | Trust `X-Forwarded-*` / `CF-Connecting-IP` headers |
-| `LITELLM_DASH_PROXY_URL` | | LiteLLM base URL for live model specs (`GET /model/info`) |
-| `LITELLM_DASH_PROXY_TOKEN` | | Master key for that fetch; only `http:` and `https:` URLs are called |
+| `LITELLM_DASH_PROXY_URL` | | LiteLLM base URL. Lists every model via public `GET /v1/models` |
+| `LITELLM_DASH_PROXY_TOKEN` | | Optional master key for `GET /model/info` (provider, price, capabilities). Only `http:` and `https:` URLs are called |
 
 Callback settings (set in the LiteLLM container):
 
@@ -74,7 +74,7 @@ All `GET` endpoints take `days=1|7|30` (default 7) and require auth when enabled
 | `GET /api/latency?group=model\|provider` | Count, average, p95 and max duration |
 | `GET /api/recent?limit=50&before_id=&status=failure` | Latest requests, newest first, paged by id. Not limited to `days` |
 | `GET /api/export.csv?status=failure` | Requests in the window; `status=failure` omits successes |
-| `GET /api/models` | Advertised models merged with usage in the window |
+| `GET /api/models` | Every advertised model plus usage in the window. Names only in the log are marked retired when the catalog was fetched |
 | `GET /api/session` | `{ authenticated, mode }`, 401 when signed out |
 | `POST /api/login` | Form fields `username`, `password`, `remember=on` |
 | `POST /api/logout` | Clears the session |

@@ -201,19 +201,52 @@ export function recent(db: UsageDb, { limit = 50, beforeId, failuresOnly = false
   return { rows: hasMore ? rows.slice(0, lim) : rows, hasMore };
 }
 
-/** Requests and tokens per model group over the window; feeds /api/models. */
+export interface ModelUsage {
+  requests: number;
+  tokens: number;
+  /** Output tokens per second over successful timed requests; null when none. */
+  outputTokPerSec: number | null;
+  failures: number;
+  /** Distinct providers and upstreams seen in the window, from the log. */
+  logProviders: string[];
+  logUpstreams: string[];
+}
+
+/** Requests, tokens and output rate per model group over the window. */
 export function modelUsage(db: UsageDb, days: Days, now = Date.now()) {
   const rows =
     db.all(
-      `SELECT COALESCE(model_group, model) AS name, COUNT(*) AS requests, COALESCE(SUM(total_tokens), 0) AS tokens
+      `SELECT COALESCE(model_group, model) AS name,
+              COUNT(*) AS requests,
+              COALESCE(SUM(total_tokens), 0) AS tokens,
+              SUM(CASE WHEN status = 'success' AND duration_ms > 0 THEN completion_tokens END) AS out_tokens,
+              SUM(CASE WHEN status = 'success' AND duration_ms > 0 THEN duration_ms END) AS out_ms,
+              SUM(CASE WHEN status != 'success' THEN 1 ELSE 0 END) AS failures,
+              GROUP_CONCAT(DISTINCT NULLIF(provider, '')) AS log_providers,
+              GROUP_CONCAT(DISTINCT NULLIF(upstream_model, '')) AS log_upstreams
        FROM requests
        WHERE ts >= ? AND COALESCE(model_group, model) != ''
        GROUP BY name`,
       windowStart(days, now),
     ) ?? [];
-  const byName = new Map<string, { requests: number; tokens: number }>();
-  for (const r of rows) byName.set(String(r.name), { requests: num(r.requests), tokens: num(r.tokens) });
+  const byName = new Map<string, ModelUsage>();
+  for (const r of rows) {
+    const outMs = num(r.out_ms);
+    byName.set(String(r.name), {
+      requests: num(r.requests),
+      tokens: num(r.tokens),
+      outputTokPerSec: outMs > 0 ? (num(r.out_tokens) / outMs) * 1000 : null,
+      failures: num(r.failures),
+      logProviders: splitList(r.log_providers),
+      logUpstreams: splitList(r.log_upstreams),
+    });
+  }
   return byName;
+}
+
+function splitList(v: unknown): string[] {
+  if (typeof v !== "string" || !v) return [];
+  return v.split(",").filter(Boolean).sort();
 }
 
 const CSV_COLUMNS = [

@@ -20,7 +20,7 @@ export interface Config {
   trustProxy: boolean;
   /** Base URL of the LiteLLM proxy, for live model metadata (/model/info). */
   proxyUrl: string;
-  /** Master key for /model/info; empty means the fetch degrades to []. */
+  /** Master key for /model/info. The public /v1/models list does not need it. */
   proxyToken: string;
 }
 
@@ -85,9 +85,6 @@ export function configWarnings(cfg: Config): string[] {
   }
   if (publicBindWithoutAuth(cfg)) {
     out.push(`no authentication configured and listening on ${cfg.host}; anyone on the network can view usage`);
-  }
-  if (cfg.proxyUrl && !cfg.proxyToken) {
-    out.push("LITELLM_DASH_PROXY_URL is set without LITELLM_DASH_PROXY_TOKEN; /model/info needs a master key, model specs will be missing");
   }
   return out;
 }

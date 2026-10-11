@@ -85,13 +85,33 @@ describe("modelUsage", () => {
     // 3 alpha rows in the 7d window: 150 (today) + 7 (Mar 14) + 1000 (Mar 14 12:59,
     // inside the 7d window that starts Mar 9) — the failure row has no tokens.
     expect([...q.modelUsage(t.db, 7, NOW).entries()].sort(([a], [b]) => a.localeCompare(b))).toEqual([
-      ["alpha", { requests: 4, tokens: 150 + 7 + 1000 }],
-      ["beta", { requests: 2, tokens: 20 + 3 }],
+      ["alpha", { requests: 4, tokens: 150 + 7 + 1000, outputTokPerSec: 50 / 3, failures: 1, logProviders: ["p1"], logUpstreams: [] }],
+      ["beta", { requests: 2, tokens: 20 + 3, outputTokPerSec: 10 / 2, failures: 0, logProviders: [], logUpstreams: [] }],
     ]);
     // In the 1d window (starting Mar 14 13:00 UTC): today's 150 and Mar 14
     // 13:00's explicit 7; the 12:59:59 failure row has zero tokens but counts
     // as a request, and one seeded alpha row sits outside the 1d window.
-    expect(q.modelUsage(t.db, 1, NOW).get("alpha")).toEqual({ requests: 3, tokens: 150 + 7 });
+    expect(q.modelUsage(t.db, 1, NOW).get("alpha")).toEqual({
+      requests: 3,
+      tokens: 150 + 7,
+      outputTokPerSec: 50 / 2,
+      failures: 1,
+      logProviders: ["p1"],
+      logUpstreams: [],
+    });
+  });
+
+  test("output rate is completion tokens over successful duration, failures excluded", () => {
+    const db = tempUsageDb();
+    db.seed(
+      { ts: iso(NOW), model: "fast", completion_tokens: 100, duration_ms: 2000 },
+      { ts: iso(NOW), model: "fast", completion_tokens: 50, duration_ms: 1000 },
+      { ts: iso(NOW), model: "fast", status: "failure", completion_tokens: 9_000, duration_ms: 100 },
+      { ts: iso(NOW - 40 * DAY), model: "fast", completion_tokens: 9_000, duration_ms: 100 },
+    );
+    // 150 output tokens over 3s of successful requests in the window.
+    expect(q.modelUsage(db.db, 7, NOW).get("fast")?.outputTokPerSec).toBe(50);
+    db.cleanup();
   });
 });
 

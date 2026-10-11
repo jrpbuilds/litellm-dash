@@ -1,6 +1,7 @@
 /**
- * Live model metadata from the LiteLLM proxy's /model/info, with a small
- * in-memory cache. Failure of any kind returns an empty list so the
+ * Live model catalog from the LiteLLM proxy. `/v1/models` is public and
+ * lists every advertised alias; `/model/info` (master key) fills provider,
+ * capabilities and price. Failure of any kind returns an empty list so the
  * dashboard keeps working without the proxy reachable.
  */
 import type { Config } from "./config";
@@ -24,12 +25,16 @@ export interface ModelInfo {
 }
 
 interface RawModel {
+  /** Public alias. `/model/info` uses model_name; `/v1/models` uses id. */
   model_name?: unknown;
+  id?: unknown;
   litellm_params?: { model?: unknown; custom_llm_provider?: unknown };
   model_info?: Record<string, unknown>;
   max_model_len?: unknown;
+  max_input_tokens?: unknown;
   max_completion_tokens?: unknown;
   max_tokens?: unknown;
+  max_output_tokens?: unknown;
   mode?: unknown;
   supports_function_calls?: unknown;
   supports_parallel_function_calling?: unknown;
@@ -45,7 +50,11 @@ function bool(v: unknown): boolean {
   return v === true || v === "true" || v === 1;
 }
 
-/** Parses a LiteLLM /model/info payload into the dashboard's model shape. */
+/**
+ * Parses either a LiteLLM `/model/info` payload or an OpenAI `/v1/models`
+ * list into the dashboard's model shape. `owned_by` is ignored: this gateway
+ * labels every alias "openai", including ones that are not.
+ */
 function modelList(raw: unknown): unknown[] | null {
   if (Array.isArray(raw)) return raw;
   // LiteLLM wraps the list as { data: [...] }.
@@ -62,7 +71,7 @@ export function parseModels(raw: unknown): ModelInfo[] {
   for (const item of list) {
     if (!item || typeof item !== "object") continue;
     const m = item as RawModel;
-    const name = typeof m.model_name === "string" ? m.model_name : null;
+    const name = typeof m.model_name === "string" ? m.model_name : typeof m.id === "string" ? m.id : null;
     if (!name) continue;
     const upstream = typeof m.litellm_params?.model === "string" ? m.litellm_params.model : null;
     const info = (m.model_info ?? {}) as Record<string, unknown>;
@@ -76,9 +85,11 @@ export function parseModels(raw: unknown): ModelInfo[] {
       upstream,
       // max_model_len may live at top level or inside model_info depending on
       // LiteLLM version; max_input_tokens is the context when present.
-      contextWindow: num(m.max_model_len) ?? num(info.max_model_len) ?? num(info.max_input_tokens),
-      maxOutput: num(m.max_completion_tokens) ?? num(m.max_tokens) ?? num(info.max_output_tokens),
-      mode: typeof m.mode === "string" ? m.mode : null,
+      contextWindow:
+        num(m.max_model_len) ?? num(m.max_input_tokens) ?? num(info.max_model_len) ?? num(info.max_input_tokens),
+      maxOutput:
+        num(m.max_completion_tokens) ?? num(m.max_tokens) ?? num(m.max_output_tokens) ?? num(info.max_output_tokens),
+      mode: typeof m.mode === "string" ? m.mode : typeof info.mode === "string" ? info.mode : null,
       vision: bool(m.supports_vision ?? info.supports_vision) || bool(info.supports_image_input),
       tools: bool(m.supports_function_calls) || bool(m.supports_parallel_function_calling),
       reasoning: bool(m.supports_reasoning) || bool(info.supports_reasoning),
@@ -109,15 +120,18 @@ export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Res
 const CACHE_MS = 60_000;
 const EMPTY: ModelInfoResult = { configured: false, models: [] };
 
-/** Only http(s) URLs are fetched, so a typo cannot send the master key elsewhere. */
-export function proxyInfoUrl(proxyUrl: string): string | null {
-  const trimmed = proxyUrl.trim().replace(/\/+$/, "");
+/**
+ * Origin of an http(s) proxy URL, or null. A bad scheme must not receive
+ * the master key, and a trailing `/v1` is stripped so both catalog paths
+ * are joined from the same root.
+ */
+export function proxyOrigin(proxyUrl: string): string | null {
+  const trimmed = proxyUrl.trim();
   if (!trimmed) return null;
   try {
     const url = new URL(trimmed);
     if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-    const path = url.pathname.replace(/\/+$/, "");
-    return `${url.origin}${path}/model/info`;
+    return url.origin;
   } catch {
     return null;
   }
@@ -135,20 +149,57 @@ function cached(load: () => Promise<ModelInfoResult>): ModelInfoFetcher {
   };
 }
 
+async function getJson(fetchImpl: FetchLike, url: string, headers: Record<string, string>): Promise<unknown | null> {
+  const res = await fetchImpl(url, {
+    headers,
+    // A slow/unreachable proxy must not hold the dashboard request.
+    signal: AbortSignal.timeout(5_000),
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+/** `/model/info` wins on shared fields; the public list fills anything it lacks. */
+function mergeModel(info: ModelInfo | undefined, listed: ModelInfo | undefined): ModelInfo {
+  const base = info ?? listed!;
+  const other = info ? listed : undefined;
+  if (!other) return base;
+  return {
+    ...base,
+    contextWindow: base.contextWindow ?? other.contextWindow,
+    maxOutput: base.maxOutput ?? other.maxOutput,
+    mode: base.mode ?? other.mode,
+  };
+}
+
 export function makeModelInfoFetcher(cfg: Config, fetchImpl: FetchLike = fetch): ModelInfoFetcher {
-  const url = proxyInfoUrl(cfg.proxyUrl);
-  if (!url) return async () => EMPTY;
+  const origin = proxyOrigin(cfg.proxyUrl);
+  if (!origin) return async () => EMPTY;
   return cached(async () => {
     try {
-      const headers: Record<string, string> = { accept: "application/json" };
-      if (cfg.proxyToken) headers.authorization = `Bearer ${cfg.proxyToken}`;
-      const res = await fetchImpl(url, {
-        headers,
-        // A slow/unreachable proxy must not hold the dashboard request.
-        signal: AbortSignal.timeout(5_000),
-      });
-      if (!res.ok) return EMPTY;
-      return { configured: true, models: parseModels(await res.json()) };
+      // The catalog is public. A failed list means we cannot tell which
+      // names were removed, so the whole fetch degrades. The master key is
+      // only sent to /model/info, and that failure does not hide the list.
+      const listRaw = await getJson(fetchImpl, `${origin}/v1/models`, { accept: "application/json" });
+      if (listRaw == null) return EMPTY;
+      const listed = parseModels(listRaw);
+      let detailed: ModelInfo[] = [];
+      if (cfg.proxyToken) {
+        const raw = await getJson(fetchImpl, `${origin}/model/info`, {
+          accept: "application/json",
+          authorization: `Bearer ${cfg.proxyToken}`,
+        });
+        if (raw) detailed = parseModels(raw);
+      }
+      const byName = new Map(detailed.map((m) => [m.name, m]));
+      const seen = new Set<string>();
+      const models: ModelInfo[] = [];
+      for (const m of listed) {
+        seen.add(m.name);
+        models.push(mergeModel(byName.get(m.name), m));
+      }
+      for (const m of detailed) if (!seen.has(m.name)) models.push(m);
+      return { configured: true, models };
     } catch {
       return EMPTY;
     }

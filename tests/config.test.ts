@@ -90,12 +90,4 @@ describe("configWarnings", () => {
     ).toBe(false);
   });
 
-  test("proxy url without a token warns", () => {
-    expect(configWarnings(loadConfig({ LITELLM_DASH_PROXY_URL: "http://litellm:4000" }))[0]).toContain(
-      "LITELLM_DASH_PROXY_TOKEN",
-    );
-    expect(
-      configWarnings(loadConfig({ LITELLM_DASH_PROXY_URL: "http://litellm:4000", LITELLM_DASH_PROXY_TOKEN: "mk" })),
-    ).toEqual([]);
-  });
 });
