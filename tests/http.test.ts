@@ -374,6 +374,24 @@ describe("login mode", () => {
     expect(foreign.status).toBe(403);
     const noOrigin = await login(srv, { username: "admin", password: "hunter2" });
     expect(noOrigin.status).toBe(303);
+  });
+
+  test("behind a trusted proxy, an https-Origin over a plain-http hop matches", async () => {
+    const host = srv.server.url.host; // same host the proxy forwards
+    const https = await login(srv, { username: "admin", password: "hunter2" }, {
+      Origin: `https://${host}`,
+      "X-Forwarded-Proto": "https",
+    });
+    expect(https.status).toBe(303);
+    expect(https.headers.get("set-cookie")).toContain("Secure");
+    const wrongScheme = await login(srv, { username: "admin", password: "hunter2" }, {
+      Origin: `http://${host}`,
+      "X-Forwarded-Proto": "https",
+    });
+    expect(wrongScheme.status).toBe(403);
+  });
+
+  test("a foreign Referer is rejected on logout", async () => {
     const logout = await srv.get("/api/logout", {
       method: "POST",
       headers: { Referer: "https://evil.example/phish" },

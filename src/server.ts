@@ -152,13 +152,22 @@ export async function createServer(cfg: Config, deps: ServerDeps = {}) {
   /**
    * Cross-site form posts are rejected. A missing Origin and Referer is
    * allowed so non-browser clients (curl smoke tests) still work.
+   * Behind a trusted reverse proxy the socket side is plain http while the
+   * browser side is https; compare the claimed origin against the origin
+   * built from the request URL with the forwarded scheme applied.
    */
+  const requestOrigin = (req: Request): string => {
+    const url = new URL(req.url);
+    if (isHttps(req)) url.protocol = "https:";
+    return url.origin;
+  };
+
   const sameOrigin = (req: Request): boolean => {
     const origin = req.headers.get("origin");
     const referer = req.headers.get("referer");
     const claimed = origin || (referer ? refererOrigin(referer) : null);
     if (!claimed) return true;
-    return claimed === new URL(req.url).origin;
+    return claimed === requestOrigin(req);
   };
 
   const authorized = (req: Req): boolean => {
