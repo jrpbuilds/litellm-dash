@@ -315,6 +315,14 @@ h1 {
   background: rgba(255, 255, 255, 0.08);
 }
 
+/* The usage view wraps the chart + log cards; it needs the same section
+   rhythm .page gives its direct children, or the two cards sit flush. */
+#usageview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-section);
+}
+
 .chartcard,
 .tablecard {
   padding: var(--space-card);
