@@ -130,6 +130,22 @@ export function chart(db: UsageDb, days: Days, group: Group, now = Date.now()) {
   };
 }
 
+/** All-time token totals per model, biggest first — the canonical order the
+ *  client uses to hand out stable chart colors: a model keeps its palette
+ *  slot in every window and grouping. Ties break alphabetically so the
+ *  order (and therefore the colors) is fully deterministic. */
+export function modelPalette(db: UsageDb) {
+  const rows =
+    db.all(
+      `SELECT COALESCE(model_group, model) AS name, SUM(total_tokens) AS tokens
+       FROM requests
+       WHERE COALESCE(model_group, model) != ''
+       GROUP BY name
+       ORDER BY tokens DESC, name`,
+    ) ?? [];
+  return rows.map((r) => ({ name: String(r.name), tokens: num(r.tokens) }));
+}
+
 /** Request count, average, p95 and max duration of successful requests per
  * group, slowest average first. p95 is nearest-rank. */
 export function latency(db: UsageDb, days: Days, group: Group, now = Date.now()) {

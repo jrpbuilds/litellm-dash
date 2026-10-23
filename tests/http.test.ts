@@ -44,6 +44,10 @@ describe("open mode", () => {
     expect(await (await srv.get("/api/session")).json()).toEqual({ authenticated: true, mode: "open" });
   });
 
+  test("palette ranks models by all-time tokens, biggest first", async () => {
+    expect(await (await srv.get("/api/palette")).json()).toEqual([{ name: "alpha", tokens: 10 }]);
+  });
+
   test("login is not available", async () => {
     expect((await login(srv, { username: "a", password: "b" })).status).toBe(404);
   });
@@ -204,6 +208,18 @@ describe("models endpoint", () => {
       srv.stop();
     }
   });
+
+  test("the palette is gated in token mode", async () => {
+    const srv = await startServer(testConfig({ token: "t" }), { db: data.db, modelInfo: info() });
+    try {
+      expect((await srv.get("/api/palette")).status).toBe(401);
+      expect(
+        (await srv.get("/api/palette", { headers: { Authorization: "Bearer t" } })).status,
+      ).toBe(200);
+    } finally {
+      srv.stop();
+    }
+  });
 });
 
 describe("model info fetcher", () => {
@@ -314,6 +330,7 @@ describe("login mode", () => {
 
   test("anonymous API requests are rejected", async () => {
     for (const path of API) expect((await srv.get(path)).status).toBe(401);
+    expect((await srv.get("/api/palette")).status).toBe(401);
     const s = await srv.get("/api/session");
     expect(s.status).toBe(401);
     expect(await s.json()).toEqual({ authenticated: false, mode: "login" });
