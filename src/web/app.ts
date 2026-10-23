@@ -1069,6 +1069,7 @@ function setView(view: "usage" | "models") {
   if (periods) periods.hidden = view !== "usage";
   if (alltime) alltime.hidden = view !== "models";
   if (view === "models") void refreshModels();
+  else void refresh(); // put the period cards back without waiting for the poll
 }
 
 document.querySelectorAll("#viewtoggle button").forEach((b) =>
