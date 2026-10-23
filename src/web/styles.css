@@ -130,10 +130,11 @@ h1 {
   margin: -2px 0 var(--space-section);
 }
 @media (max-width: 560px) {
+  /* keep the desktop left/right split on mobile too; wrap is only a safety
+     net for very narrow screens */
   .viewbar {
     flex-wrap: wrap;
     row-gap: 10px;
-    justify-content: center;
   }
 }
 /* Period filters get their own full-width bar under the header so the toggle
@@ -229,6 +230,16 @@ h1 {
 @media (min-width: 641px) {
   .tablecard .cardhead {
     align-items: center;
+  }
+}
+@media (max-width: 640px) {
+  /* Title takes its own line; the filter row spans full width with the
+     toggles left and Export CSV right, matching the desktop edges. */
+  .tablecard .headactions {
+    display: flex;
+    width: 100%;
+    flex-wrap: nowrap;
+    justify-content: space-between;
   }
 }
 .cardhead h2 {
