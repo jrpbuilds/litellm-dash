@@ -259,11 +259,36 @@ const fullDate = (b: string, bucketType: "hour" | "day"): string =>
 let lastChart: ChartResp | null = null;
 let selectedBucket: number | null = null; // null = tooltip hidden
 
-/** Solid + gradient variants for a series color. Model mode picks from the
- *  fixed palette by the server's all-time usage rank; provider mode derives
- *  from the same stable hue as the log chips — either way a name is the same
- *  color in the chart, legend, and log table. */
-type SeriesColor = { line: string; fillTop: string; fillBottom: string };
+/** X-axis geometry: one slot per bucket, the bar centered inside it. The
+ *  single source of truth for drawing, the crosshair, and hit-testing. */
+function barLayout(w: number, n: number) {
+  const padR = 6;
+  const slot = (w - padR) / Math.max(1, n);
+  const barW = Math.max(5, Math.min(slot * 0.68, 44));
+  return {
+    slot,
+    barW,
+    cx: (i: number) => slot * i + slot / 2,
+    x0: (i: number) => slot * i + (slot - barW) / 2,
+  };
+}
+
+type BarFrame = {
+  canvas: HTMLCanvasElement;
+  series: { barTop: string; barBottom: string; daily: number[] }[];
+  labels: string[];
+  max: number;
+};
+let frame: BarFrame | null = null;
+let chartProgress = 1; // 0..1 grow-in ease
+let chartRaf = 0;
+let chartKey = ""; // data last drawn — identical data never re-animates
+
+/** Solid + bar-gradient variants for a series color. Model mode picks from
+ *  the fixed palette by the server's all-time usage rank; provider mode
+ *  derives from the same stable hue as the log chips — either way a name is
+ *  the same color in the chart, legend, and log table. */
+type SeriesColor = { line: string; barTop: string; barBottom: string };
 
 /** Model → color from /api/palette (all-time usage rank, fetched once per
  *  page). A model owns one palette slot in every chart, period, and
@@ -285,8 +310,8 @@ const UNKNOWN_MODEL_COLOR = SERIES_COLORS[SERIES_COLORS.length - 1];
 
 const solid = (hex: string): SeriesColor => ({
   line: hex,
-  fillTop: hex + "55",
-  fillBottom: hex + "05",
+  barTop: hex,
+  barBottom: hex + "b3",
 });
 
 function modelColor(name: string): SeriesColor {
@@ -298,8 +323,8 @@ function providerColor(name: string): SeriesColor {
   const hue = providerHue(name);
   return {
     line: `hsl(${hue} 70% 65%)`,
-    fillTop: `hsl(${hue} 70% 65% / 0.33)`,
-    fillBottom: `hsl(${hue} 70% 65% / 0.03)`,
+    barTop: `hsl(${hue} 70% 65%)`,
+    barBottom: `hsl(${hue} 70% 65% / 0.7)`,
   };
 }
 
@@ -325,59 +350,30 @@ function renderChart(c: ChartResp) {
   const series = names.map((name) => ({
     name,
     color: colors.get(name)!.line,
-    fillTop: colors.get(name)!.fillTop,
-    fillBottom: colors.get(name)!.fillBottom,
+    barTop: colors.get(name)!.barTop,
+    barBottom: colors.get(name)!.barBottom,
     daily: labels.map((b) => {
       const hit = c.rows.find((r) => r.b === b && r.name === name);
       return hit ? hit.tokens : 0;
     }),
   }));
 
-  // cumulative per model (Cursor's chart is cumulative)
-  const cum = series.map((s) => {
-    let acc = 0;
-    return { ...s, points: s.daily.map((v) => (acc += v)) };
-  });
+  // Per-day stacked bars (Grok-style): bar height = that day's total, each
+  // segment a model/provider in its stable color, biggest series at the base.
+  const dayTotals = labels.map((_, i) => series.reduce((m, s) => m + s.daily[i], 0));
+  const cumTotal = dayTotals.map((_, i) => dayTotals.slice(0, i + 1).reduce((m, v) => m + v, 0));
+  const max = Math.max(1, ...dayTotals);
 
-  const cumTotal = labels.map((_, i) => cum.reduce((m, s) => m + s.points[i], 0));
-  const max = Math.max(1, ...cumTotal);
-
-  // draw
-  const dpr = window.devicePixelRatio || 1;
-  const w = canvas.clientWidth;
-  const h = canvas.clientHeight;
-  canvas.width = Math.round(w * dpr);
-  canvas.height = Math.round(h * dpr);
-  const ctx = canvas.getContext("2d")!;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, w, h);
-
-  const padR = 6;
-  const x = (i: number) =>
-    labels.length === 1 ? w / 2 : (i / (labels.length - 1)) * (w - padR);
-  const y = (v: number) => h - (v / max) * (h - 10);
-
-  // stack cumulative areas bottom-up in reverse rank so the top series paints last
-  for (let si = cum.length - 1; si >= 0; si--) {
-    const s = cum[si];
-    if (s.points.every((v) => v === 0)) continue;
-    const grad = ctx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, s.fillTop);
-    grad.addColorStop(1, s.fillBottom);
-    ctx.beginPath();
-    ctx.moveTo(x(0), y(s.points[0]));
-    s.points.forEach((v, i) => ctx.lineTo(x(i), y(v)));
-    ctx.lineTo(x(s.points.length - 1), h);
-    ctx.lineTo(x(0), h);
-    ctx.closePath();
-    ctx.fillStyle = grad;
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(x(0), y(s.points[0]));
-    s.points.forEach((v, i) => ctx.lineTo(x(i), y(v)));
-    ctx.strokeStyle = s.color;
-    ctx.lineWidth = 2;
-    ctx.stroke();
+  frame = { canvas, series, labels, max };
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const key = JSON.stringify([dayTotals, series.map((s) => s.daily)]);
+  if (reduced || key === chartKey) {
+    chartKey = key;
+    chartProgress = 1;
+    drawChartFrame();
+  } else {
+    chartKey = key;
+    animateBars();
   }
 
   // axes + gridlines
@@ -387,7 +383,7 @@ function renderChart(c: ChartResp) {
     .reverse()
     .map((t) => `<span>${t === 0 ? "0" : fmtTokens(t)}</span>`)
     .join("");
-  const plotH = h;
+  const plotH = canvas.clientHeight;
   $("gridlines").innerHTML = ticks
     .map((t) => {
       const top = plotH - (t / max) * (plotH - 10);
@@ -395,11 +391,12 @@ function renderChart(c: ChartResp) {
     })
     .join("");
   const step = Math.ceil(labels.length / 7);
+  const layout = barLayout(canvas.clientWidth, labels.length);
   $("xaxis").innerHTML = labels
     .map((b, i) =>
       i % step === 0 || i === labels.length - 1
-        ? `<span>${xLabel(b, c.bucketType)}</span>`
-        : "<span></span>",
+        ? `<span style="left:${layout.cx(i).toFixed(1)}px">${xLabel(b, c.bucketType)}</span>`
+        : "",
     )
     .join("");
 
@@ -418,7 +415,7 @@ function renderChart(c: ChartResp) {
     tip.innerHTML = "";
   } else {
     const last = selectedBucket;
-    const dayRows = cum
+    const dayRows = series
       .map((s) => ({
         name: s.name,
         color: s.color,
@@ -443,6 +440,87 @@ function renderChart(c: ChartResp) {
   }
 }
 
+/** Paint one frame of the stacked bar chart at the current grow-in progress.
+ *  The bucket under the cursor stays lit; its neighbours recede. */
+function drawChartFrame() {
+  if (!frame) return;
+  const { canvas, series, labels, max } = frame;
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  if (canvas.width !== Math.round(w * dpr)) canvas.width = Math.round(w * dpr);
+  if (canvas.height !== Math.round(h * dpr)) canvas.height = Math.round(h * dpr);
+  const ctx = canvas.getContext("2d")!;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  const layout = barLayout(w, labels.length);
+  const y = (v: number) => h - (v / max) * (h - 10);
+  const scaled = series.map((s) => s.daily.map((v) => v * chartProgress));
+  const radius = Math.min(3, layout.barW / 4);
+  const rounded = typeof ctx.roundRect === "function";
+
+  for (let b = 0; b < labels.length; b++) {
+    const x0 = layout.x0(b);
+    let stack = 0;
+    let topSi = -1;
+    for (let si = scaled.length - 1; si >= 0; si--)
+      if (scaled[si][b] > 0) {
+        topSi = si;
+        break;
+      }
+    if (topSi < 0) continue;
+    ctx.globalAlpha = selectedBucket === null || selectedBucket === b ? 1 : 0.42;
+    for (let si = 0; si < scaled.length; si++) {
+      const v = scaled[si][b];
+      if (v <= 0) continue;
+      const yBottom = y(stack);
+      const yTop = y(stack + v);
+      const segH = Math.max(1, yBottom - yTop);
+      const grad = ctx.createLinearGradient(0, yTop, 0, yBottom);
+      grad.addColorStop(0, series[si].barTop);
+      grad.addColorStop(1, series[si].barBottom);
+      ctx.fillStyle = grad;
+      // round only the top edge of the topmost segment
+      if (rounded && si === topSi && radius > 0 && segH > radius * 2) {
+        ctx.beginPath();
+        ctx.roundRect(x0, yTop, layout.barW, segH, [radius, radius, 0, 0]);
+        ctx.fill();
+      } else {
+        ctx.fillRect(x0, yTop, layout.barW, segH);
+      }
+      stack += v;
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+/** Ease the bars in from zero. Skipped for reduced motion, and identical
+ *  data (poll refreshes, hover re-renders) never re-animates. A background
+ *  tab never fires rAF, so a timeout snaps the final frame in afterwards. */
+function animateBars(duration = 460) {
+  cancelAnimationFrame(chartRaf);
+  if (document.hidden) {
+    chartProgress = 1;
+    drawChartFrame();
+    return;
+  }
+  const t0 = performance.now();
+  const tick = (t: number) => {
+    const p = Math.min(1, (t - t0) / duration);
+    chartProgress = 1 - (1 - p) ** 3;
+    drawChartFrame();
+    if (p < 1) chartRaf = requestAnimationFrame(tick);
+  };
+  chartRaf = requestAnimationFrame(tick);
+  setTimeout(() => {
+    if (chartProgress < 1) {
+      chartProgress = 1;
+      drawChartFrame();
+    }
+  }, duration + 150);
+}
+
 /** Position the hover crosshair under the current bucket selection. */
 function updateCrosshair() {
   const plot = document.querySelector<HTMLElement>(".plot");
@@ -458,11 +536,8 @@ function updateCrosshair() {
     return;
   }
   const canvas = $<HTMLCanvasElement>("chart");
-  const w = canvas.clientWidth;
-  const padR = 6;
   const labels = lastChart.buckets;
-  const x = labels.length === 1 ? w / 2 : (selectedBucket / (labels.length - 1)) * (w - padR);
-  bar.style.left = `${x}px`;
+  bar.style.left = `${barLayout(canvas.clientWidth, labels.length).cx(selectedBucket)}px`;
   bar.style.opacity = "1";
 }
 
@@ -476,12 +551,11 @@ function wireChartHover() {
     if (!lastChart) return null;
     const rect = canvas.getBoundingClientRect();
     const labels = lastChart.buckets;
-    const padR = 6;
-    const plotW = rect.width - padR;
     const rel = clientX - rect.left;
-    if (rel < -12 || rel > plotW + 12) return null;
-    const frac = labels.length === 1 ? 0.5 : Math.min(1, Math.max(0, rel / plotW));
-    return Math.round(frac * (labels.length - 1));
+    if (rel < -12 || rel > rect.width - 6 + 12) return null;
+    const { slot } = barLayout(rect.width, labels.length);
+    const i = Math.floor(rel / slot);
+    return Math.min(labels.length - 1, Math.max(0, i));
   };
 
   const apply = (clientX: number) => {
