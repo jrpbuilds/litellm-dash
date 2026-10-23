@@ -35,12 +35,16 @@ function fmtLogDate(iso: string): string {
   });
 }
 
-/** Stable hue for a provider name — chips self-color, no per-provider CSS. */
-function providerHue(name: string): number {
+/** Deterministic small int for a name — hash buckets never shift when other
+ *  names come or go, so hash-derived colors are stable between renders. */
+function nameHash(name: string, mod: number): number {
   let h = 0;
-  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % mod;
   return h;
 }
+
+/** Stable hue for a provider name — chips self-color, no per-provider CSS. */
+const providerHue = (name: string): number => nameHash(name, 360);
 
 function providerChip(p: string): string {
   const hue = providerHue(p);
@@ -223,7 +227,7 @@ function renderCards(s: Summary) {
 // ----------------------------------------------------------------- chart
 
 const SERIES_COLORS = [
-  "#3ecf8e", // green — first/biggest model gets Cursor's hero color
+  "#3ecf8e", // green — the all-time biggest model keeps Cursor's hero color
   "#7fb8ff",
   "#a78bfa",
   "#facc15",
@@ -255,13 +259,28 @@ const fullDate = (b: string, bucketType: "hour" | "day"): string =>
 let lastChart: ChartResp | null = null;
 let selectedBucket: number | null = null; // null = tooltip hidden
 
-/** Solid + gradient variants for a series color. Model mode uses the fixed
- *  palette; provider mode derives from the same stable hue as the log chips,
- *  so a provider is the same color in the chart, legend, and log table. */
+/** Solid + gradient variants for a series color. Model mode picks from the
+ *  fixed palette by the server's all-time usage rank; provider mode derives
+ *  from the same stable hue as the log chips — either way a name is the same
+ *  color in the chart, legend, and log table. */
 type SeriesColor = { line: string; fillTop: string; fillBottom: string };
 
-function modelColor(i: number): SeriesColor {
-  const hex = SERIES_COLORS[i % SERIES_COLORS.length];
+/** Model → color from /api/palette (all-time usage rank, fetched once per
+ *  page). A model owns one palette slot in every chart, period, and
+ *  grouping; names the server has never ranked fall back to the name hash —
+ *  equally stable, just not collision-free. */
+let paletteRank = new Map<string, number>();
+let paletteOnce: Promise<void> | null = null;
+
+function ensurePalette(): Promise<void> {
+  paletteOnce ??= getJson<{ name: string; tokens: number }[]>("/api/palette").then((rows) => {
+    if (rows) paletteRank = new Map(rows.map((r, i) => [r.name, i]));
+  });
+  return paletteOnce;
+}
+
+function modelColor(name: string): SeriesColor {
+  const hex = SERIES_COLORS[(paletteRank.get(name) ?? nameHash(name, 997)) % SERIES_COLORS.length];
   return { line: hex, fillTop: hex + "55", fillBottom: hex + "05" };
 }
 
@@ -282,17 +301,15 @@ function renderChart(c: ChartResp) {
     selectedBucket = null;
   }
   const canvas = $<HTMLCanvasElement>("chart");
-  // one series per group (model or provider); in provider mode colors match
-  // the log-table chips so the same provider looks the same everywhere
+  // one series per group (model or provider); colors are name-stable so the
+  // same model/provider looks the same in every chart, legend, and log row
   const names = [...new Set(c.rows.map((r) => r.name))];
   const totals = new Map<string, number>();
   for (const r of c.rows) totals.set(r.name, (totals.get(r.name) ?? 0) + r.tokens);
+  // biggest first decides PAINT order only (top series drawn last) — not colors
   names.sort((a, b) => (totals.get(b) ?? 0) - (totals.get(a) ?? 0));
   const colors = new Map(
-    names.map((n, i) => [
-      n,
-      c.group === "provider" ? providerColor(n) : modelColor(i),
-    ]),
+    names.map((n) => [n, c.group === "provider" ? providerColor(n) : modelColor(n)]),
   );
 
   const series = names.map((name) => ({
@@ -558,7 +575,7 @@ function renderRecent() {
           : "";
       return `<tr class="${rowCls}" data-row="${r.id}" tabindex="0" role="button" aria-expanded="${expandedId === r.id ? "true" : "false"}">
       <td class="mut">${fmtLogDate(r.ts)}</td>
-      <td class="name">${esc(r.model)}${r.provider ? providerChip(r.provider) : ""}${failed ? `<span class="pill bad failpill">failed</span>` : ""}${r.vision ? `<span class="vision-icon" title="Used vision (image input)" aria-label="Used vision (image input)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.06 12.35a1 1 0 0 1 0-.7C3.42 8.13 7.21 5 12 5s8.58 3.13 9.94 6.65a1 1 0 0 1 0 .7C20.58 15.87 16.79 19 12 19s-8.58-3.13-9.94-6.65Z"/><circle cx="12" cy="12" r="3"/></svg></span>` : ""}</td>
+      <td class="name"><span class="msw" style="background:${modelColor(r.model).line}"></span>${esc(r.model)}${r.provider ? providerChip(r.provider) : ""}${failed ? `<span class="pill bad failpill">failed</span>` : ""}${r.vision ? `<span class="vision-icon" title="Used vision (image input)" aria-label="Used vision (image input)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.06 12.35a1 1 0 0 1 0-.7C3.42 8.13 7.21 5 12 5s8.58 3.13 9.94 6.65a1 1 0 0 1 0 .7C20.58 15.87 16.79 19 12 19s-8.58-3.13-9.94-6.65Z"/><circle cx="12" cy="12" r="3"/></svg></span>` : ""}</td>
       <td class="num">${tokens ? fmtTokens(tokens) : "–"}</td>
       <td class="num">${latencyCell(r.duration_ms, recentState.latency, group)}</td>
     </tr>` + detailRow;
@@ -646,7 +663,7 @@ function detailCard(r: RecentRow, type: string, tokens: number, group: string): 
     ? `<span class="d-provider" style="--h:${providerHue(r.provider)}">${esc(r.provider)}</span>`
     : `<span class="dim">unknown</span>`;
   const routing = [
-    kv("Model", esc(r.model), "strong"),
+    kv("Model", `<span class="msw" style="background:${modelColor(r.model).line}"></span>${esc(r.model)}`, "strong"),
     kv("Upstream", r.upstream_model ? esc(r.upstream_model) : `<span class="dim">–</span>`, "mono"),
     kv("Provider", provider),
     kv("Request", esc(kind)),
@@ -962,6 +979,7 @@ async function refresh() {
     getJson<ChartResp>(`/api/chart?days=${days}&group=${periodState.group}`),
     getJson<LatencyResp>(`/api/latency?days=${days}&group=${periodState.group}`),
     getJson<RecentResp>(recentUrl(PAGE_SIZE)),
+    ensurePalette(), // in the same batch so the first render is already stable
   ]);
   if (s) renderCards(s);
   if (c) {

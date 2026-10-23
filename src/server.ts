@@ -260,6 +260,9 @@ export async function createServer(cfg: Config, deps: ServerDeps = {}) {
         ),
       ),
     },
+    "/api/palette": {
+      GET: gate(() => Response.json(q.modelPalette(db))),
+    },
     "/api/recent": {
       GET: gate((u) => {
         const p = u.searchParams;
