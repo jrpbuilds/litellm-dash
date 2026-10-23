@@ -24,12 +24,21 @@ const NO_USAGE: q.ModelUsage = {
 /** Merges the advertised model list with per-model usage over the window.
  * Advertised-but-never-called models get zero usage. A name only in the log
  * is retired when the catalog was fetched — it left the gateway, so it must
- * not be offered as a copyable client id. With no catalog, it is just usage. */
-async function buildModelsPayload(db: q.UsageDb, modelInfo: ModelInfoFetcher, days: q.Days) {
-  const [info, usage] = await Promise.all([
+ * not be offered as a copyable client id. With no catalog, it is just usage.
+ * On the all-time view, tok/s stays windowed (last 7 days) — a lifetime
+ * average would blend in a model's entire history. */
+async function buildModelsPayload(db: q.UsageDb, modelInfo: ModelInfoFetcher, days: q.DaysOrAll) {
+  const [info, usage, recent] = await Promise.all([
     modelInfo().catch(() => ({ configured: false, models: [] as ModelInfo[] })),
     Promise.resolve(q.modelUsage(db, days)),
+    days === "all" ? Promise.resolve(q.modelUsage(db, 7)) : Promise.resolve(null),
   ]);
+  if (recent) {
+    for (const [name, u] of recent) {
+      const cur = usage.get(name);
+      if (cur) usage.set(name, { ...cur, outputTokPerSec: u.outputTokPerSec });
+    }
+  }
   const models: ModelCard[] = [];
   const seen = new Set<string>();
   for (const m of info.models) {
@@ -244,7 +253,7 @@ export async function createServer(cfg: Config, deps: ServerDeps = {}) {
 
   const api: Record<string, { GET?: Handler; POST?: Handler }> = {
     "/api/summary": {
-      GET: gate((u) => Response.json(q.summary(db, q.parseDays(u.searchParams.get("days"))))),
+      GET: gate((u) => Response.json(q.summary(db, q.parseDaysOrAll(u.searchParams.get("days"))))),
     },
     "/api/chart": {
       GET: gate((u) =>
@@ -289,7 +298,7 @@ export async function createServer(cfg: Config, deps: ServerDeps = {}) {
     },
     "/api/models": {
       GET: gate(async (u) =>
-        Response.json(await buildModelsPayload(db, modelInfo, q.parseDays(u.searchParams.get("days")))),
+        Response.json(await buildModelsPayload(db, modelInfo, q.parseDaysOrAll(u.searchParams.get("days")))),
       ),
     },
     "/api/session": {

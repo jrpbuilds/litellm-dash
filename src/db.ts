@@ -59,6 +59,13 @@ export function parseDays(raw: string | null): Days {
   return (PERIODS as readonly number[]).includes(d) ? (d as Days) : 7;
 }
 
+export type DaysOrAll = Days | "all";
+
+/** Like parseDays, but "all" selects the whole log (the models page). */
+export function parseDaysOrAll(raw: string | null): DaysOrAll {
+  return raw === "all" ? "all" : parseDays(raw);
+}
+
 export const parseGroup = (raw: string | null): Group => (raw === "provider" ? "provider" : "model");
 
 const groupExpr = (group: Group) =>
@@ -88,15 +95,16 @@ export function windowStart(days: Days, now = Date.now()): string {
   return days === 1 ? `${first}:00:00Z` : `${first}T00:00:00Z`;
 }
 
-export function summary(db: UsageDb, days: Days, now = Date.now()) {
+export function summary(db: UsageDb, days: DaysOrAll, now = Date.now()) {
+  const since = days === "all" ? null : windowStart(days, now);
   const r =
     db.all(
       `SELECT COUNT(*) AS requests,
               COALESCE(SUM(total_tokens), 0) AS tokens,
               COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
               COALESCE(SUM(completion_tokens), 0) AS completion_tokens
-       FROM requests WHERE ts >= ?`,
-      windowStart(days, now),
+       FROM requests ${since ? "WHERE ts >= ?" : ""}`,
+      ...(since ? [since] : []),
     )?.[0] ?? {};
   return {
     dbAvailable: db.available,
@@ -229,7 +237,8 @@ export interface ModelUsage {
 }
 
 /** Requests, tokens and output rate per model group over the window. */
-export function modelUsage(db: UsageDb, days: Days, now = Date.now()) {
+export function modelUsage(db: UsageDb, days: DaysOrAll, now = Date.now()) {
+  const since = days === "all" ? null : windowStart(days, now);
   const rows =
     db.all(
       `SELECT COALESCE(model_group, model) AS name,
@@ -241,9 +250,9 @@ export function modelUsage(db: UsageDb, days: Days, now = Date.now()) {
               GROUP_CONCAT(DISTINCT NULLIF(provider, '')) AS log_providers,
               GROUP_CONCAT(DISTINCT NULLIF(upstream_model, '')) AS log_upstreams
        FROM requests
-       WHERE ts >= ? AND COALESCE(model_group, model) != ''
+       WHERE COALESCE(model_group, model) != '' ${since ? "AND ts >= ?" : ""}
        GROUP BY name`,
-      windowStart(days, now),
+      ...(since ? [since] : []),
     ) ?? [];
   const byName = new Map<string, ModelUsage>();
   for (const r of rows) {
