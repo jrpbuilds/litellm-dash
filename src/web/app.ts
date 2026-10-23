@@ -616,14 +616,14 @@ type ModelEntry = {
 };
 
 type ModelsResp = {
-  days: number;
+  days: number | "all";
   dbAvailable: boolean;
   /** false when the proxy URL is unset, the scheme is not http(s), or the fetch failed */
   proxyConfigured: boolean;
   models: ModelEntry[];
 };
 
-let modelsCache: { days: number; resp: ModelsResp } | null = null;
+let modelsCache: ModelsResp | null = null;
 
 const PAGE_SIZE = 50;
 /** Which request row is expanded (mobile accordion — one at a time). */
@@ -803,7 +803,7 @@ function fmtTokPerSec(n: number | null): string {
 function requestSpeed(r: RecentRow, group: string): string {
   const failed = r.status !== "success" || r.duration_ms == null || r.duration_ms <= 0;
   const rate = failed ? null : (r.completion_tokens / r.duration_ms!) * 1000;
-  const model = modelsCache?.resp.models.find((m) => m.name === group)?.outputTokPerSec;
+  const model = modelsCache?.models.find((m) => m.name === group)?.outputTokPerSec;
   const usual = model != null ? ` <span class="dim">${fmtTokPerSec(model)} usual</span>` : "";
   return `${fmtTokPerSec(rate)}${usual}`;
 }
@@ -840,14 +840,15 @@ function renderModels(resp: ModelsResp) {
   }
   if (sub) {
     sub.textContent = resp.proxyConfigured
-      ? "Every model on the gateway; usage for the current period."
-      : "Usage for the current period. Set LITELLM_DASH_PROXY_URL to list models that have not been called.";
+      ? "Every model on the gateway; all-time usage."
+      : "All-time usage per model. Set LITELLM_DASH_PROXY_URL to list models that have not been called.";
   }
-  grid.innerHTML = resp.models.map((m) => modelCard(m)).join("");
+  grid.innerHTML = resp.models.map((m) => modelCard(m, resp.days === "all")).join("");
 }
 
 /** A chunky panel per model: identity on the left, labelled stats on the right. */
-function modelCard(m: ModelEntry): string {
+function modelCard(m: ModelEntry, allTime: boolean): string {
+  const speedLabel = allTime ? "Speed · 7d" : "Speed";
   const providers = m.provider ? [m.provider] : m.logProviders;
   const upstreams = m.upstream ? [m.upstream] : m.logUpstreams;
   const caps = CAP_ICONS.filter(([, key]) => (key === "reasoning" ? m.reasoning : key === "tools" ? m.tools : m.vision))
@@ -859,6 +860,14 @@ function modelCard(m: ModelEntry): string {
   const dash = `<span class="dim">–</span>`;
   const stat = (label: string, value: string, cls = "") =>
     `<div class="mstat${cls ? ` ${cls}` : ""}"><span class="mlab">${label}</span><span class="mval">${value}</span></div>`;
+  /** Failed requests as a color-coded share of traffic: green clean,
+   *  amber from 1%, red from 5%. The tooltip carries the raw counts. */
+  const failStat = () => {
+    if (!m.requests) return stat("Failed", dash);
+    const pct = (m.failures / m.requests) * 100;
+    const cls = pct >= 5 ? "bad" : pct >= 1 ? "warn" : "ok";
+    return stat("Failed", `<span title="${m.failures} failed of ${m.requests} requests">${pct.toFixed(1)}%</span>`, cls);
+  };
   const price =
     m.inputCost != null || m.outputCost != null
       ? `<span class="mprice">${fmtPrice(m.inputCost)} in · ${fmtPrice(m.outputCost)} out</span>`
@@ -877,8 +886,8 @@ function modelCard(m: ModelEntry): string {
     <div class="mstats">
       ${stat("Requests", m.requests ? m.requests.toLocaleString() : dash)}
       ${stat("Tokens", m.tokens ? fmtTokens(m.tokens) : dash)}
-      ${stat("Speed", m.outputTokPerSec != null ? fmtTokPerSec(m.outputTokPerSec) : dash)}
-      ${stat("Failed", m.failures ? String(m.failures) : dash, m.failures ? "bad" : "")}
+      ${stat(speedLabel, m.outputTokPerSec != null ? fmtTokPerSec(m.outputTokPerSec) : dash)}
+      ${failStat()}
       ${stat("Context", m.contextWindow ? fmtTokens(m.contextWindow) : dash)}
       ${stat("Max out", m.maxOutput ? fmtTokens(m.maxOutput) : dash)}
     </div>
@@ -893,19 +902,31 @@ if (modelsGrid) {
   });
 }
 
-async function refreshModels(days: number) {
-  if (modelsCache?.days === days) {
-    renderModels(modelsCache.resp);
+/** The models page is all-time: lifetime totals per model, with tok/s kept
+ *  on a recent window server-side and the stat cards switched to lifetime. */
+async function refreshModels() {
+  if (modelsCache) {
+    renderModels(modelsCache);
     return;
   }
   const grid = $("modelsgrid");
   grid.innerHTML = `<div class="models-none skelbar">…</div>`;
-  const resp = await getJson<ModelsResp>(`/api/models?days=${days}`);
+  const [resp, s] = await Promise.all([
+    getJson<ModelsResp>("/api/models?days=all"),
+    getJson<Summary>("/api/summary?days=all"),
+  ]);
+  if (s) {
+    renderCards(s);
+    $("updated").textContent = s.dbAvailable
+      ? `Updated ${new Date().toLocaleTimeString("en-GB", { hour12: false })}`
+      : "usage.db not found. Waiting for the first logged request.";
+    setStatus(s.dbAvailable ? "live" : "nodb");
+  }
   if (!resp) {
     grid.innerHTML = `<div class="models-none">Failed to load models. Is the API reachable?</div>`;
     return;
   }
-  modelsCache = { days, resp };
+  modelsCache = resp;
   renderModels(resp);
 }
 
@@ -1042,7 +1063,12 @@ function setView(view: "usage" | "models") {
   const models = $<HTMLElement>("modelsview");
   if (usage) usage.hidden = view !== "usage";
   if (models) models.hidden = view !== "models";
-  if (view === "models") void refreshModels(periodState.days);
+  // the models page is all-time — no date filter there
+  const periods = $<HTMLElement>("periods");
+  const alltime = $<HTMLElement>("alltime");
+  if (periods) periods.hidden = view !== "usage";
+  if (alltime) alltime.hidden = view !== "models";
+  if (view === "models") void refreshModels();
 }
 
 document.querySelectorAll("#viewtoggle button").forEach((b) =>
@@ -1052,7 +1078,7 @@ document.querySelectorAll("#viewtoggle button").forEach((b) =>
 async function refresh() {
   const days = periodState.days;
   if (activeView === "models") {
-    void refreshModels(days);
+    void refreshModels();
     $("updated").textContent = "";
     return;
   }
@@ -1093,10 +1119,6 @@ function setDays(days: number) {
   document.querySelectorAll("#periods button").forEach((b) => {
     b.classList.toggle("active", Number((b as HTMLElement).dataset.days) === days);
   });
-  if (activeView === "models") {
-    void refreshModels(days);
-    return;
-  }
   refresh();
 }
 

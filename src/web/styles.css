@@ -917,6 +917,20 @@ tbody tr:hover {
 .modelrow .mstat.bad .mval {
   color: #fca5a5;
 }
+.modelrow .mstat.warn .mval {
+  color: var(--warn);
+}
+.modelrow .mstat.ok .mval {
+  color: var(--ok);
+}
+.alltime {
+  color: var(--muted);
+  font-size: 12px;
+}
+/* the author display rule would beat the UA [hidden] style */
+.periods[hidden] {
+  display: none;
+}
 .modelrow .dim {
   color: var(--muted);
   font-weight: 400;

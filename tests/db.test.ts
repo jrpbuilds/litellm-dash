@@ -113,6 +113,16 @@ describe("modelUsage", () => {
     expect(q.modelUsage(db.db, 7, NOW).get("fast")?.outputTokPerSec).toBe(50);
     db.cleanup();
   });
+
+  test("all-time ignores the window", () => {
+    // beta's 100k-token row sits outside the 7d window; all-time counts it
+    expect(q.modelUsage(t.db, "all", NOW).get("beta")).toMatchObject({
+      requests: 3,
+      tokens: 100_023,
+      failures: 0,
+    });
+    expect(q.summary(t.db, "all", NOW)).toMatchObject({ requests: 7, tokens: 101_180 });
+  });
 });
 
 describe("chart", () => {

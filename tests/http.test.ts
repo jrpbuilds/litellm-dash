@@ -48,6 +48,14 @@ describe("open mode", () => {
     expect(await (await srv.get("/api/palette")).json()).toEqual([{ name: "alpha", tokens: 10 }]);
   });
 
+  test("models and summary accept days=all", async () => {
+    const m = await (await srv.get("/api/models?days=all")).json();
+    expect(m.days).toBe("all");
+    expect(m.models).toEqual([expect.objectContaining({ name: "alpha", requests: 1, tokens: 10 })]);
+    const s = await (await srv.get("/api/summary?days=all")).json();
+    expect(s).toMatchObject({ days: "all", requests: 1, tokens: 10 });
+  });
+
   test("login is not available", async () => {
     expect((await login(srv, { username: "a", password: "b" })).status).toBe(404);
   });
