@@ -58,12 +58,14 @@ const PROVIDER_COLOR_PINNED: Record<string, string> = {
   cloudflare: "#f6821f", // Cloudflare brand orange
   "zai-coding": "#7fb8ff", // model-palette blue
   "opencode-go": "#3ecf8e", // model-palette green (Cursor hero)
+  "agnes-ai": "#a855f7", // Agnes AI purple
 };
 /** Hues for pinned providers — chips and the detail-card --h var. */
 const PROVIDER_HUE_PINNED: Record<string, number> = {
   cloudflare: 28,
   "zai-coding": 213, // hue of #7fb8ff
   "opencode-go": 153, // hue of #3ecf8e
+  "agnes-ai": 270, // hue of #a855f7 purple
 };
 const providerHue = (name: string): number => PROVIDER_HUE_PINNED[name] ?? nameHash(name, 360);
 
