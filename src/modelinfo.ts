@@ -79,9 +79,13 @@ export function parseModels(raw: unknown): ModelInfo[] {
     const provider = typeof m.litellm_params?.custom_llm_provider === "string"
       ? m.litellm_params.custom_llm_provider
       : prefix || null;
+    // Normalize Agnes providers to the single display name agnes-ai.
+    const agnesUpstream = typeof upstream === "string" && upstream.includes("agnes");
+    const agnesName = typeof name === "string" && name.toLowerCase().includes("agnes");
+const displayProvider = (agnesUpstream || agnesName) ? "agnes-ai" : provider;
     out.push({
       name,
-      provider,
+      provider: displayProvider,
       upstream,
       // max_model_len may live at top level or inside model_info depending on
       // LiteLLM version; max_input_tokens is the context when present.
