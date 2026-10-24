@@ -333,6 +333,8 @@ function modelColor(name: string): SeriesColor {
 }
 
 function providerColor(name: string): SeriesColor {
+  const pin = PROVIDER_COLOR_PINNED[name];
+  if (pin) return solid(pin);
   const hue = providerHue(name);
   return {
     line: `hsl(${hue} 70% 65%)`,
