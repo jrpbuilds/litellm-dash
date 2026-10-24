@@ -267,16 +267,14 @@ h1 {
   background: transparent;
   color: var(--muted);
   font: 400 12.5px/1 inherit;
-  padding: 7px 12px;
-  border-radius: 999px;
+  padding: 4px 6px;
   cursor: pointer;
-  transition: color 0.12s ease, background 0.12s ease;
+  transition: color 0.12s ease;
 }
 .metric button:hover {
   color: var(--text);
 }
 .metric button.active {
-  background: #262626;
   color: var(--text);
 }
 .groupby.open .gdd-menu {
