@@ -122,19 +122,23 @@ export function chart(db: UsageDb, days: Days, group: Group, now = Date.now()) {
   const name = groupExpr(group);
   const rows =
     db.all(
-      `SELECT substr(ts, 1, ${days === 1 ? 13 : 10}) AS b, ${name} AS name, SUM(total_tokens) AS tokens
+      `SELECT substr(ts, 1, ${days === 1 ? 13 : 10}) AS b, ${name} AS name,
+              SUM(total_tokens) AS tokens, COUNT(*) AS requests,
+              MAX(CASE WHEN call_type = 'aimage_generation' THEN 1 ELSE 0 END) AS is_image
        FROM requests
        WHERE ts >= ? AND ${name} != ''
        GROUP BY b, name
        ORDER BY b`,
       windowStart(days, now),
     ) ?? [];
+  const hasImage = rows.some((r) => r.is_image);
   return {
     days,
     group,
     bucketType,
     buckets: buckets(days, now),
-    rows: rows.map((r) => ({ b: String(r.b), name: String(r.name), tokens: num(r.tokens) })),
+    hasImage,
+    rows: rows.map((r) => ({ b: String(r.b), name: String(r.name), tokens: num(r.tokens), requests: num(r.requests) ?? 0 })),
   };
 }
 

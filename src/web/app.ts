@@ -24,6 +24,14 @@ const fmtTokens = (n: number): string =>
         ? `${(n / 1e3).toFixed(1)}k`
         : String(n);
 
+/** Plain integer formatter for request counts (no decimal places). */
+const fmtCount = (n: number): string =>
+  n >= 1e6
+    ? `${(n / 1e6).toFixed(1)}M`
+    : n >= 1e3
+      ? `${(n / 1e3).toFixed(1)}k`
+      : String(n);
+
 /** Browser-local log-table date format, e.g. "Oct 5, 06:54 PM". */
 function fmtLogDate(iso: string): string {
   return new Date(iso).toLocaleString("en-US", {
@@ -153,7 +161,9 @@ type ChartResp = {
   group: "model" | "provider";
   /** Bucket keys for the whole window, oldest first (UTC hour or day). */
   buckets: string[];
-  rows: { b: string; name: string; tokens: number }[];
+  /** True when at least one series in this window is an image-generation model. */
+  hasImage: boolean;
+  rows: { b: string; name: string; tokens: number; requests: number }[];
 };
 
 type LatencyResp = {
@@ -361,8 +371,10 @@ function renderChart(c: ChartResp) {
   // one series per group (model or provider); colors are name-stable so the
   // same model/provider looks the same in every chart, legend, and log row
   const names = [...new Set(c.rows.map((r) => r.name))];
+  const metric = c.hasImage ? "requests" : "tokens";
+  const fmt = c.hasImage ? fmtCount : fmtTokens;
   const totals = new Map<string, number>();
-  for (const r of c.rows) totals.set(r.name, (totals.get(r.name) ?? 0) + r.tokens);
+  for (const r of c.rows) totals.set(r.name, (totals.get(r.name) ?? 0) + (c.hasImage ? r.requests : r.tokens));
   // biggest first decides PAINT order only (top series drawn last) — not colors
   names.sort((a, b) => (totals.get(b) ?? 0) - (totals.get(a) ?? 0));
   // unknown never draws — it's bookkeeping for NULL model/provider rows, not a
@@ -380,7 +392,7 @@ function renderChart(c: ChartResp) {
     barBottom: colors.get(name)!.barBottom,
     daily: labels.map((b) => {
       const hit = c.rows.find((r) => r.b === b && r.name === name);
-      return hit ? hit.tokens : 0;
+      return hit ? (c.hasImage ? hit.requests : hit.tokens) : 0;
     }),
   }));
 
@@ -407,7 +419,7 @@ function renderChart(c: ChartResp) {
   $("yaxis").innerHTML = ticks
     .slice()
     .reverse()
-    .map((t) => `<span>${t === 0 ? "0" : fmtTokens(t)}</span>`)
+    .map((t) => `<span>${t === 0 ? "0" : fmt(t)}</span>`)
     .join("");
   const plotH = canvas.clientHeight;
   $("gridlines").innerHTML = ticks
@@ -451,16 +463,17 @@ function renderChart(c: ChartResp) {
       .sort((a, b) => b.daily - a.daily);
     const dayTotal = dayRows.reduce((m, r) => m + r.daily, 0);
     const cumTotalLast = cumTotal[last];
-    let tt = `<div class="t-date">${fullDate(labels[last], c.bucketType)}</div><div class="t-sub">Daily breakdown</div>`;
+    const subLabel = c.hasImage ? "Daily requests" : "Daily breakdown";
+    let tt = `<div class="t-date">${fullDate(labels[last], c.bucketType)}</div><div class="t-sub">${subLabel}</div>`;
     if (dayTotal === 0) {
       tt += `<div class="t-row"><span class="m" style="color:var(--muted)">No usage</span></div>`;
     } else {
       for (const r of dayRows) {
-        tt += `<div class="t-row"><span class="dot" style="background:${r.color}"></span><span class="m">${esc(r.name)}</span><span class="v">${fmtTokens(r.daily)}</span><span class="p">${((r.daily / dayTotal) * 100).toFixed(1)}%</span></div>`;
+        tt += `<div class="t-row"><span class="dot" style="background:${r.color}"></span><span class="m">${esc(r.name)}</span><span class="v">${fmt(r.daily)}</span><span class="p">${((r.daily / dayTotal) * 100).toFixed(1)}%</span></div>`;
       }
     }
-    tt += `<div class="t-total"><span>Daily total</span><span class="v">${dayTotal ? fmtTokens(dayTotal) : "–"}</span></div>`;
-    tt += `<div class="t-total t-total-stack"><span>Cumulative total</span><span class="v">${cumTotalLast ? fmtTokens(cumTotalLast) : "–"}</span></div>`;
+    tt += `<div class="t-total"><span>Daily total</span><span class="v">${dayTotal ? fmt(dayTotal) : "–"}</span></div>`;
+    tt += `<div class="t-total t-total-stack"><span>Cumulative total</span><span class="v">${cumTotalLast ? fmt(cumTotalLast) : "–"}</span></div>`;
     tip.innerHTML = tt;
     tip.hidden = false;
   }

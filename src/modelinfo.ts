@@ -199,6 +199,20 @@ export function makeModelInfoFetcher(cfg: Config, fetchImpl: FetchLike = fetch):
         models.push(mergeModel(byName.get(m.name), m));
       }
       for (const m of detailed) if (!seen.has(m.name)) models.push(m);
+      // Image-generation models often have no token pricing from the proxy
+      // (they bill per image, not per token). Inject explicit zero rates so
+      // the dashboard shows $0.00 instead of an en dash.
+      const IMAGE_MODEL_PRICING: Record<string, { inputCost: number; outputCost: number }> = {
+        agnes_image_2_5_flash: { inputCost: 0, outputCost: 0 },
+      };
+      for (const m of models) {
+        const key = m.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+        const pricing = IMAGE_MODEL_PRICING[key];
+        if (pricing && m.inputCost == null && m.outputCost == null) {
+          m.inputCost = pricing.inputCost;
+          m.outputCost = pricing.outputCost;
+        }
+      }
       return { configured: true, models };
     } catch {
       return EMPTY;

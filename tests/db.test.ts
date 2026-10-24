@@ -129,7 +129,7 @@ describe("chart", () => {
   test("1d buckets by hour", () => {
     const c = q.chart(t.db, 1, "model", NOW);
     expect(c.bucketType).toBe("hour");
-    expect(c.rows).toContainEqual({ b: "2026-03-14T13", name: "alpha", tokens: 7 });
+    expect(c.rows).toContainEqual({ b: "2026-03-14T13", name: "alpha", tokens: 7, requests: 1 });
     expect(c.rows.find((r) => r.b === "2026-03-14T12")).toBeUndefined();
   });
 
