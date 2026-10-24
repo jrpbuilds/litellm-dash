@@ -365,12 +365,10 @@ function renderChart(c: ChartResp) {
   for (const r of c.rows) totals.set(r.name, (totals.get(r.name) ?? 0) + r.tokens);
   // biggest first decides PAINT order only (top series drawn last) — not colors
   names.sort((a, b) => (totals.get(b) ?? 0) - (totals.get(a) ?? 0));
-  // unknown always sorts last (legend + topmost segment), regardless of size
+  // unknown never draws — it's bookkeeping for NULL model/provider rows, not a
+  // series; the log table still shows those rows in grey.
   const ui = names.indexOf("unknown");
-  if (ui !== -1) {
-    names.splice(ui, 1);
-    names.push("unknown");
-  }
+  if (ui !== -1) names.splice(ui, 1);
   const colors = new Map(
     names.map((n) => [n, c.group === "provider" ? providerColor(n) : modelColor(n)]),
   );
