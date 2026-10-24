@@ -43,8 +43,12 @@ function nameHash(name: string, mod: number): number {
   return h;
 }
 
-/** Stable hue for a provider name — chips self-color, no per-provider CSS. */
-const providerHue = (name: string): number => nameHash(name, 360);
+/** Stable hue for a provider name — chips self-color, no per-provider CSS.
+ * Brand-pinned exceptions keep known providers on their identity color. */
+const PROVIDER_HUE_PINNED: Record<string, number> = {
+  cloudflare: 28, // Cloudflare brand orange (#F6821F ≈ hsl(28 73% 54%))
+};
+const providerHue = (name: string): number => PROVIDER_HUE_PINNED[name] ?? nameHash(name, 360);
 
 function providerChip(p: string): string {
   const hue = providerHue(p);
