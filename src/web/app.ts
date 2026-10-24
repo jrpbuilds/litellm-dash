@@ -58,6 +58,7 @@ const PROVIDER_COLOR_PINNED: Record<string, string> = {
   cloudflare: "#f6821f", // Cloudflare brand orange
   "zai-coding": "#7fb8ff", // model-palette blue
   "opencode-go": "#3ecf8e", // model-palette green (Cursor hero)
+  routeway: "#f87171", // provider red (distinct from zai blue / agnes purple)
   "agnes-ai": "#a855f7", // Agnes AI purple
 };
 /** Hues for pinned providers — chips and the detail-card --h var. */
@@ -65,6 +66,7 @@ const PROVIDER_HUE_PINNED: Record<string, number> = {
   cloudflare: 28,
   "zai-coding": 213, // hue of #7fb8ff
   "opencode-go": 153, // hue of #3ecf8e
+  routeway: 0, // hue of #f87171 red
   "agnes-ai": 270, // hue of #a855f7 purple
 };
 const providerHue = (name: string): number => PROVIDER_HUE_PINNED[name] ?? nameHash(name, 360);
@@ -362,6 +364,18 @@ function providerColor(name: string): SeriesColor {
   };
 }
 
+/** Chart metric: tokens (default) or requests — toggle next to Group by. */
+let chartMetric: "tokens" | "requests" =
+  localStorage.getItem("dash.chartMetric") === "requests" ? "requests" : "tokens";
+
+function applyMetricButtons(): void {
+  document.querySelectorAll("#metric button").forEach((b) => {
+    const on = (b as HTMLElement).dataset.metric === chartMetric;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-pressed", String(on));
+  });
+}
+
 function renderChart(c: ChartResp) {
   lastChart = c;
   updateCrosshair();
@@ -373,10 +387,10 @@ function renderChart(c: ChartResp) {
   // one series per group (model or provider); colors are name-stable so the
   // same model/provider looks the same in every chart, legend, and log row
   const names = [...new Set(c.rows.map((r) => r.name))];
-  const metric = c.hasImage ? "requests" : "tokens";
-  const fmt = c.hasImage ? fmtCount : fmtTokens;
+  const useReq = chartMetric === "requests";
+  const fmt = useReq ? fmtCount : fmtTokens;
   const totals = new Map<string, number>();
-  for (const r of c.rows) totals.set(r.name, (totals.get(r.name) ?? 0) + (c.hasImage ? r.requests : r.tokens));
+  for (const r of c.rows) totals.set(r.name, (totals.get(r.name) ?? 0) + (useReq ? r.requests : r.tokens));
   // biggest first decides PAINT order only (top series drawn last) — not colors
   names.sort((a, b) => (totals.get(b) ?? 0) - (totals.get(a) ?? 0));
   // unknown never draws — it's bookkeeping for NULL model/provider rows, not a
@@ -394,7 +408,7 @@ function renderChart(c: ChartResp) {
     barBottom: colors.get(name)!.barBottom,
     daily: labels.map((b) => {
       const hit = c.rows.find((r) => r.b === b && r.name === name);
-      return hit ? (c.hasImage ? hit.requests : hit.tokens) : 0;
+      return hit ? (useReq ? hit.requests : hit.tokens) : 0;
     }),
   }));
 
@@ -465,7 +479,7 @@ function renderChart(c: ChartResp) {
       .sort((a, b) => b.daily - a.daily);
     const dayTotal = dayRows.reduce((m, r) => m + r.daily, 0);
     const cumTotalLast = cumTotal[last];
-    const subLabel = c.hasImage ? "Daily requests" : "Daily breakdown";
+    const subLabel = useReq ? "Daily requests" : "Daily breakdown";
     let tt = `<div class="t-date">${fullDate(labels[last], c.bucketType)}</div><div class="t-sub">${subLabel}</div>`;
     if (dayTotal === 0) {
       tt += `<div class="t-row"><span class="m" style="color:var(--muted)">No usage</span></div>`;
@@ -1197,6 +1211,21 @@ function setGroup(group: "model" | "provider") {
 document.querySelectorAll("#periods button").forEach((b) =>
   b.addEventListener("click", () => setDays(Number((b as HTMLElement).dataset.days))),
 );
+
+// metric toggle: Tokens (default) / Requests — repaints chart + tooltip live
+document.querySelectorAll("#metric button").forEach((b) =>
+  b.addEventListener("click", () => {
+    chartMetric = (b as HTMLElement).dataset.metric === "requests" ? "requests" : "tokens";
+    try {
+      localStorage.setItem("dash.chartMetric", chartMetric);
+    } catch {
+      /* storage unavailable (private mode) — toggle just won't persist */
+    }
+    applyMetricButtons();
+    if (lastChart) renderChart(lastChart);
+  }),
+);
+applyMetricButtons();
 const groupDD = $("groupdd");
 const groupMenu = $("groupdd-menu");
 if (groupDD && groupMenu) {

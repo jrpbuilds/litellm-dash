@@ -44,14 +44,20 @@
             <h2>Your Usage</h2>
             <p class="sub">Your usage per day across this period.</p>
           </div>
-          <div class="groupby" id="groupby">
-            <button class="gdd-btn" id="groupdd" aria-haspopup="listbox" aria-expanded="false">
-              <span class="gdd-label">Group by: <b id="groupdd-value">Model</b></span>
-              <span class="gdd-chev">▾</span>
-            </button>
-            <div class="gdd-menu" id="groupdd-menu" role="listbox" hidden>
-              <button role="option" data-group="model" class="active" aria-selected="true">Model</button>
-              <button role="option" data-group="provider" aria-selected="false">Provider</button>
+          <div class="headtools">
+            <div class="metric" id="metric" role="group" aria-label="Chart metric">
+              <button data-metric="tokens" class="active" aria-pressed="true">Tokens</button>
+              <button data-metric="requests" aria-pressed="false">Requests</button>
+            </div>
+            <div class="groupby" id="groupby">
+              <button class="gdd-btn" id="groupdd" aria-haspopup="listbox" aria-expanded="false">
+                <span class="gdd-label">Group by: <b id="groupdd-value">Model</b></span>
+                <span class="gdd-chev">▾</span>
+              </button>
+              <div class="gdd-menu" id="groupdd-menu" role="listbox" hidden>
+                <button role="option" data-group="model" class="active" aria-selected="true">Model</button>
+                <button role="option" data-group="provider" aria-selected="false">Provider</button>
+              </div>
             </div>
           </div>
         </div>

@@ -251,6 +251,34 @@ h1 {
   position: relative;
   z-index: 3;
 }
+/* Metric toggle (Tokens / Requests) beside the Group by dropdown — same
+   bare-text pill recipe as .periods. */
+.headtools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.metric {
+  display: inline-flex;
+  gap: 6px;
+}
+.metric button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 400 12.5px/1 inherit;
+  padding: 7px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.metric button:hover {
+  color: var(--text);
+}
+.metric button.active {
+  background: #262626;
+  color: var(--text);
+}
 .groupby.open .gdd-menu {
   z-index: 10;
 }
