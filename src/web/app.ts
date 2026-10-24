@@ -60,6 +60,9 @@ const PROVIDER_HUE_PINNED: Record<string, number> = {
 const providerHue = (name: string): number => PROVIDER_HUE_PINNED[name] ?? nameHash(name, 360);
 
 function providerChip(p: string): string {
+  if (isUnknownName(p)) {
+    return `<span class="chip" style="color:hsl(215 15% 78%);background:hsl(215 13% 20% / 0.55);border-color:hsl(215 13% 50% / 0.35)">${esc(p)}</span>`;
+  }
   const hue = providerHue(p);
   return `<span class="chip" style="color:hsl(${hue} 70% 75%);background:hsl(${hue} 60% 20% / 0.55);border-color:hsl(${hue} 60% 50% / 0.35)">${esc(p)}</span>`;
 }
@@ -327,12 +330,16 @@ const solid = (hex: string): SeriesColor => ({
   barBottom: hex + "b3",
 });
 
+/** NULL/"unknown" entities always render the muted slate and sort last. */
+const isUnknownName = (n: string | null | undefined): boolean => !n || n === "unknown";
+
 function modelColor(name: string): SeriesColor {
-  if (!name) return solid(UNKNOWN_MODEL_COLOR);
+  if (isUnknownName(name)) return solid(UNKNOWN_MODEL_COLOR);
   return solid(SERIES_COLORS[(paletteRank.get(name) ?? nameHash(name, 997)) % SERIES_COLORS.length]);
 }
 
 function providerColor(name: string): SeriesColor {
+  if (isUnknownName(name)) return solid(UNKNOWN_MODEL_COLOR);
   const pin = PROVIDER_COLOR_PINNED[name];
   if (pin) return solid(pin);
   const hue = providerHue(name);
@@ -358,6 +365,12 @@ function renderChart(c: ChartResp) {
   for (const r of c.rows) totals.set(r.name, (totals.get(r.name) ?? 0) + r.tokens);
   // biggest first decides PAINT order only (top series drawn last) — not colors
   names.sort((a, b) => (totals.get(b) ?? 0) - (totals.get(a) ?? 0));
+  // unknown always sorts last (legend + topmost segment), regardless of size
+  const ui = names.indexOf("unknown");
+  if (ui !== -1) {
+    names.splice(ui, 1);
+    names.push("unknown");
+  }
   const colors = new Map(
     names.map((n) => [n, c.group === "provider" ? providerColor(n) : modelColor(n)]),
   );
