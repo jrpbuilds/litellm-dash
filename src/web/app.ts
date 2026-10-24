@@ -43,14 +43,15 @@ function nameHash(name: string, mod: number): number {
   return h;
 }
 
-/** Brand/palette-pinned providers — exact hexes, same shades as the model
- * palette where noted; chips and charts render them identically to models. */
+/** Brand/palette-pinned providers. Charts use the exact hex (same shades as
+ * the model palette); chips keep the shared tonal recipe, pinned to the same
+ * hue via PROVIDER_HUE_PINNED so their look is identical to every other chip. */
 const PROVIDER_COLOR_PINNED: Record<string, string> = {
   cloudflare: "#f6821f", // Cloudflare brand orange
   "zai-coding": "#7fb8ff", // model-palette blue
   "opencode-go": "#3ecf8e", // model-palette green (Cursor hero)
 };
-/** Hues for pinned providers feed the detail-card --h CSS var. */
+/** Hues for pinned providers — chips and the detail-card --h var. */
 const PROVIDER_HUE_PINNED: Record<string, number> = {
   cloudflare: 28,
   "zai-coding": 213, // hue of #7fb8ff
@@ -59,10 +60,6 @@ const PROVIDER_HUE_PINNED: Record<string, number> = {
 const providerHue = (name: string): number => PROVIDER_HUE_PINNED[name] ?? nameHash(name, 360);
 
 function providerChip(p: string): string {
-  const pin = PROVIDER_COLOR_PINNED[p];
-  if (pin) {
-    return `<span class="chip" style="color:${pin};background:${pin}8c;border-color:${pin}59">${esc(p)}</span>`;
-  }
   const hue = providerHue(p);
   return `<span class="chip" style="color:hsl(${hue} 70% 75%);background:hsl(${hue} 60% 20% / 0.55);border-color:hsl(${hue} 60% 50% / 0.35)">${esc(p)}</span>`;
 }
