@@ -115,7 +115,7 @@ describe("models endpoint", () => {
       model_name: "never-called",
       litellm_params: { model: "vertex/gemini" },
       mode: "chat",
-      supports_function_calls: true,
+      supports_function_calling: true,
     },
   ];
   const info = () => stubModelInfo({ configured: true, models: parseModels(advertised) });

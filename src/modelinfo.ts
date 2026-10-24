@@ -36,8 +36,8 @@ interface RawModel {
   max_tokens?: unknown;
   max_output_tokens?: unknown;
   mode?: unknown;
-  supports_function_calls?: unknown;
-  supports_parallel_function_calling?: unknown;
+  supports_function_calling?: unknown;
+  supports_tool_choice?: unknown;
   supports_vision?: unknown;
   supports_reasoning?: unknown;
   input_cost_per_token?: unknown;
@@ -95,7 +95,7 @@ const displayProvider = (agnesUpstream || agnesName) ? "agnes-ai" : provider;
         num(m.max_completion_tokens) ?? num(m.max_tokens) ?? num(m.max_output_tokens) ?? num(info.max_output) ?? num(info.max_output_tokens),
       mode: typeof m.mode === "string" ? m.mode : typeof info.mode === "string" ? info.mode : null,
       vision: bool(m.supports_vision ?? info.supports_vision) || bool(info.supports_image_input),
-      tools: bool(m.supports_function_calls) || bool(m.supports_parallel_function_calling),
+      tools: bool(m.supports_function_calling) || bool(m.supports_tool_choice),
       reasoning: bool(m.supports_reasoning) || bool(info.supports_reasoning),
       inputCost: num(m.input_cost_per_token) ?? num(info.input_cost_per_token),
       outputCost: num(m.output_cost_per_token) ?? num(info.output_cost_per_token),
