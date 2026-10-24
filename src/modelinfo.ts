@@ -86,9 +86,9 @@ export function parseModels(raw: unknown): ModelInfo[] {
       // max_model_len may live at top level or inside model_info depending on
       // LiteLLM version; max_input_tokens is the context when present.
       contextWindow:
-        num(m.max_model_len) ?? num(m.max_input_tokens) ?? num(info.max_model_len) ?? num(info.max_input_tokens),
+        num(m.max_model_len) ?? num(m.max_input_tokens) ?? num(info.context_window) ?? num(info.max_model_len) ?? num(info.max_input_tokens),
       maxOutput:
-        num(m.max_completion_tokens) ?? num(m.max_tokens) ?? num(m.max_output_tokens) ?? num(info.max_output_tokens),
+        num(m.max_completion_tokens) ?? num(m.max_tokens) ?? num(m.max_output_tokens) ?? num(info.max_output) ?? num(info.max_output_tokens),
       mode: typeof m.mode === "string" ? m.mode : typeof info.mode === "string" ? info.mode : null,
       vision: bool(m.supports_vision ?? info.supports_vision) || bool(info.supports_image_input),
       tools: bool(m.supports_function_calls) || bool(m.supports_parallel_function_calling),
