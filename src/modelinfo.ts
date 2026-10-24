@@ -217,6 +217,18 @@ export function makeModelInfoFetcher(cfg: Config, fetchImpl: FetchLike = fetch):
           m.outputCost = pricing.outputCost;
         }
       }
+      // Inject known capabilities for models whose upstream does not report them.
+      const CAP_OVERRIDES: Record<string, { vision?: boolean; tools?: boolean; reasoning?: boolean }> = {
+        agnes_3_0_flash: { vision: true, tools: true, reasoning: true },
+      };
+      for (const m of models) {
+        const key = m.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+        const caps = CAP_OVERRIDES[key];
+        if (!caps) continue;
+        if (m.vision === false || m.vision === undefined) m.vision = !!caps.vision;
+        if (m.tools === false || m.tools === undefined) m.tools = !!caps.tools;
+        if (m.reasoning === false || m.reasoning === undefined) m.reasoning = !!caps.reasoning;
+      }
       return { configured: true, models };
     } catch {
       return EMPTY;
