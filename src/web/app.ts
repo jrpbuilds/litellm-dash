@@ -165,9 +165,7 @@ type ChartResp = {
   group: "model" | "provider";
   /** Bucket keys for the whole window, oldest first (UTC hour or day). */
   buckets: string[];
-  /** True when at least one series in this window is an image-generation model. */
-  hasImage: boolean;
-  rows: { b: string; name: string; tokens: number; requests: number }[];
+  rows: { b: string; name: string; tokens: number; requests: number; isImage: boolean }[];
 };
 
 type LatencyResp = {
@@ -218,8 +216,6 @@ function setStatus(kind: "live" | "nodb" | "down"): void {
 function renderCards(s: Summary) {
   const cards = [
     { label: "Total tokens", value: fmtTokens(s.tokens) },
-    { label: "Input tokens", value: fmtTokens(s.promptTokens) },
-    { label: "Output tokens", value: fmtTokens(s.completionTokens) },
     { label: "Requests", value: String(s.requests) },
   ];
   const fresh = cards
@@ -386,11 +382,14 @@ function renderChart(c: ChartResp) {
   const canvas = $<HTMLCanvasElement>("chart");
   // one series per group (model or provider); colors are name-stable so the
   // same model/provider looks the same in every chart, legend, and log row
-  const names = [...new Set(c.rows.map((r) => r.name))];
   const useReq = chartMetric === "requests";
+  // tokens mode hides image-generation models: their rows carry no token
+  // usage, so the series would be invisible clutter (requests still shows them)
+  const rows = useReq ? c.rows : c.rows.filter((r) => !r.isImage);
+  const names = [...new Set(rows.map((r) => r.name))];
   const fmt = useReq ? fmtCount : fmtTokens;
   const totals = new Map<string, number>();
-  for (const r of c.rows) totals.set(r.name, (totals.get(r.name) ?? 0) + (useReq ? r.requests : r.tokens));
+  for (const r of rows) totals.set(r.name, (totals.get(r.name) ?? 0) + (useReq ? r.requests : r.tokens));
   // biggest first decides PAINT order only (top series drawn last) — not colors
   names.sort((a, b) => (totals.get(b) ?? 0) - (totals.get(a) ?? 0));
   // unknown never draws — it's bookkeeping for NULL model/provider rows, not a
@@ -407,7 +406,7 @@ function renderChart(c: ChartResp) {
     barTop: colors.get(name)!.barTop,
     barBottom: colors.get(name)!.barBottom,
     daily: labels.map((b) => {
-      const hit = c.rows.find((r) => r.b === b && r.name === name);
+      const hit = rows.find((r) => r.b === b && r.name === name);
       return hit ? (useReq ? hit.requests : hit.tokens) : 0;
     }),
   }));

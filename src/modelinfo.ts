@@ -208,6 +208,7 @@ export function makeModelInfoFetcher(cfg: Config, fetchImpl: FetchLike = fetch):
       // the dashboard shows $0.00 instead of an en dash.
       const IMAGE_MODEL_PRICING: Record<string, { inputCost: number; outputCost: number }> = {
         agnes_image_2_5_flash: { inputCost: 0, outputCost: 0 },
+        seedream_v5_lite: { inputCost: 0, outputCost: 0 },
       };
       for (const m of models) {
         const key = m.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();

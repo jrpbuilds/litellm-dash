@@ -129,8 +129,21 @@ describe("chart", () => {
   test("1d buckets by hour", () => {
     const c = q.chart(t.db, 1, "model", NOW);
     expect(c.bucketType).toBe("hour");
-    expect(c.rows).toContainEqual({ b: "2026-03-14T13", name: "alpha", tokens: 7, requests: 1 });
+    expect(c.rows).toContainEqual({ b: "2026-03-14T13", name: "alpha", tokens: 7, requests: 1, isImage: false });
     expect(c.rows.find((r) => r.b === "2026-03-14T12")).toBeUndefined();
+  });
+
+  test("image generations count as requests but carry no tokens", () => {
+    const d = tempUsageDb();
+    d.seed(
+      { ts: "2026-03-15T12:00:00Z", model: "chat1", call_type: "acompletion", total_tokens: 500 },
+      { ts: "2026-03-15T12:10:00Z", model: "img", call_type: "aimage_generation" },
+    );
+    const c = q.chart(d.db, 1, "model", NOW);
+    expect(c.rows.find((r) => r.name === "img")).toMatchObject({ tokens: 0, requests: 1, isImage: true });
+    expect(c.rows.find((r) => r.name === "chat1")).toMatchObject({ tokens: 500, requests: 1, isImage: false });
+    expect(c.rows.filter((r) => !r.isImage).reduce((m, r) => m + r.tokens, 0)).toBe(500);
+    d.cleanup();
   });
 
   test("provider grouping rolls null and empty up as unknown", () => {

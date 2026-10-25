@@ -116,14 +116,18 @@ export function summary(db: UsageDb, days: DaysOrAll, now = Date.now()) {
   };
 }
 
-/** Per-bucket, per-group token totals. The client fills empty buckets. */
+/** Per-bucket, per-group totals. tokens EXCLUDES image-generation rows (they
+ * carry none, so the series is dead weight — requests still counts them) and
+ * rows carry isImage so the client can drop those series in tokens mode. The
+ * client fills empty buckets. */
 export function chart(db: UsageDb, days: Days, group: Group, now = Date.now()) {
   const bucketType = days === 1 ? ("hour" as const) : ("day" as const);
   const name = groupExpr(group);
   const rows =
     db.all(
       `SELECT substr(ts, 1, ${days === 1 ? 13 : 10}) AS b, ${name} AS name,
-              SUM(total_tokens) AS tokens, COUNT(*) AS requests,
+              SUM(CASE WHEN call_type != 'aimage_generation' THEN total_tokens ELSE 0 END) AS tokens,
+              COUNT(*) AS requests,
               MAX(CASE WHEN call_type = 'aimage_generation' THEN 1 ELSE 0 END) AS is_image
        FROM requests
        WHERE ts >= ? AND ${name} != ''
@@ -131,14 +135,12 @@ export function chart(db: UsageDb, days: Days, group: Group, now = Date.now()) {
        ORDER BY b`,
       windowStart(days, now),
     ) ?? [];
-  const hasImage = rows.some((r) => r.is_image);
   return {
     days,
     group,
     bucketType,
     buckets: buckets(days, now),
-    hasImage,
-    rows: rows.map((r) => ({ b: String(r.b), name: String(r.name), tokens: num(r.tokens), requests: num(r.requests) ?? 0 })),
+    rows: rows.map((r) => ({ b: String(r.b), name: String(r.name), tokens: num(r.tokens), requests: num(r.requests) ?? 0, isImage: !!r.is_image })),
   };
 }
 
