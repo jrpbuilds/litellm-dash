@@ -209,6 +209,7 @@ export function makeModelInfoFetcher(cfg: Config, fetchImpl: FetchLike = fetch):
       const IMAGE_MODEL_PRICING: Record<string, { inputCost: number; outputCost: number }> = {
         agnes_image_2_5_flash: { inputCost: 0, outputCost: 0 },
         seedream_v5_lite: { inputCost: 0, outputCost: 0 },
+        seedream_v5_pro: { inputCost: 0, outputCost: 0 },
       };
       for (const m of models) {
         const key = m.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
