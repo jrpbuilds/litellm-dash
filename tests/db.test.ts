@@ -123,6 +123,78 @@ describe("modelUsage", () => {
     });
     expect(q.summary(t.db, "all", NOW)).toMatchObject({ requests: 7, tokens: 101_180 });
   });
+
+  /** Per-upstream slices behind /api/models — provider split + variants. */
+  describe("modelUpstreams", () => {
+    test("breaks a group down by upstream and provider", () => {
+      const db = tempUsageDb();
+      db.seed(
+        { ts: iso(NOW), model: "flash", provider: "zai-coding", upstream_model: "zai/flash", completion_tokens: 100, duration_ms: 2000 },
+        { ts: iso(NOW), model: "flash", provider: "routeway", upstream_model: "openai/flash-uncensored", completion_tokens: 30, duration_ms: 1000 },
+        { ts: iso(NOW), model: "flash", provider: "routeway", upstream_model: "openai/flash-uncensored", status: "failure", error: "boom" },
+      );
+      // ORDER BY grp, upstream_model: the openai/ slice sorts first.
+      expect(q.modelUpstreams(db.db, 7, NOW)).toEqual([
+        {
+          group: "flash",
+          upstreamModel: "openai/flash-uncensored",
+          provider: "routeway",
+          requests: 2,
+          tokens: 30,
+          failures: 1,
+          outTokens: 30,
+          outMs: 1000,
+          outputTokPerSec: 30,
+        },
+        {
+          group: "flash",
+          upstreamModel: "zai/flash",
+          provider: "zai-coding",
+          requests: 1,
+          tokens: 100,
+          failures: 0,
+          outTokens: 100,
+          outMs: 2000,
+          outputTokPerSec: 50,
+        },
+      ]);
+      db.cleanup();
+    });
+
+    test("respects the window and keeps failed probes with null upstream", () => {
+      const db = tempUsageDb();
+      db.seed(
+        { ts: iso(NOW), model: "flash", provider: "zai-coding", upstream_model: "zai/flash" },
+        { ts: iso(NOW - 40 * DAY), model: "flash", provider: "zai-coding", upstream_model: "zai/flash" },
+        { ts: iso(NOW), model: "flash", status: "failure", error: "connect" },
+      );
+      expect(q.modelUpstreams(db.db, 7, NOW)).toEqual([
+        {
+          group: "flash",
+          upstreamModel: null,
+          provider: null,
+          requests: 1,
+          tokens: 0,
+          failures: 1,
+          outTokens: 0,
+          outMs: 0,
+          outputTokPerSec: null,
+        },
+        {
+          group: "flash",
+          upstreamModel: "zai/flash",
+          provider: "zai-coding",
+          requests: 1,
+          tokens: 0,
+          failures: 0,
+          outTokens: 0,
+          outMs: 1000,
+          outputTokPerSec: 0,
+        },
+      ]);
+      db.cleanup();
+    });
+  });
 });
 
 describe("chart", () => {

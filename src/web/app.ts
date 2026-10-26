@@ -647,6 +647,21 @@ type RecentResp = {
   hasMore: boolean;
 };
 
+type ProviderSplit = { provider: string; requests: number; tokens: number };
+
+type VariantEntry = {
+  name: string;
+  providers: string[];
+  provider: string | null;
+  contextWindow: number | null;
+  maxOutput: number | null;
+  inputCost: number | null;
+  outputCost: number | null;
+  requests: number;
+  tokens: number;
+  outputTokPerSec: number | null;
+};
+
 type ModelEntry = {
   name: string;
   providers: string[];
@@ -667,6 +682,11 @@ type ModelEntry = {
   logUpstreams: string[];
   /** In the log but no longer advertised. Only set when the catalog was fetched. */
   retired: boolean;
+  /** Per-provider request split; set only when traffic spans 2+ providers. */
+  split?: ProviderSplit[];
+  /** Advertised variants (e.g. glm-5.3-flash-uncensored) whose traffic logs
+   *  under this model's group, folded in so totals stay graph-consistent. */
+  variants?: VariantEntry[];
 };
 
 type ModelsResp = {
@@ -902,6 +922,53 @@ function renderModels(resp: ModelsResp) {
   grid.innerHTML = resp.models.map((m) => modelCard(m, resp.days === "all")).join("");
 }
 
+/** Slim stacked bar (request share per provider) + counts legend, drawn only
+ *  when a model's traffic spans 2+ providers. Colors are the stable provider
+ *  palette, so segments match chips and chart series. A tiny sliver still
+ *  renders (2px min) — the rare provider is exactly the point of the bar. */
+function splitBar(split: ProviderSplit[] | undefined): string {
+  if (!split || split.length < 2) return "";
+  const total = split.reduce((s, p) => s + p.requests, 0) || 1;
+  const segs = split
+    .map((p) => {
+      const pct = (p.requests / total) * 100;
+      return `<i style="width:${pct.toFixed(2)}%;background:${providerColor(p.provider).line}" title="${esc(p.provider)}: ${p.requests.toLocaleString()} req · ${fmtTokens(p.tokens)} tok"></i>`;
+    })
+    .join("");
+  const legend = split
+    .map(
+      (p) =>
+        `<span title="${esc(p.provider)}: ${p.requests.toLocaleString()} req · ${fmtTokens(p.tokens)} tok"><i class="ld" style="background:${providerColor(p.provider).line}"></i>${esc(p.provider)} ${p.requests.toLocaleString()}</span>`,
+    )
+    .join("");
+  return `<div class="msplit" role="img" aria-label="Requests by provider">${segs}</div><div class="msplit-legend">${legend}</div>`;
+}
+
+/** Folded variant sub-rows: the variant's identity (provider chip, copyable
+ *  client id) and catalog facts plus its share of the parent's traffic. */
+function variantRows(variants: VariantEntry[] | undefined, allTime: boolean): string {
+  if (!variants?.length) return "";
+  const speedSuffix = allTime ? " · 7d" : "";
+  return `<div class="mvariants">${variants
+    .map((v) => {
+      const meta = [
+        v.contextWindow ? `${fmtTokens(v.contextWindow)} ctx` : "",
+        v.inputCost != null || v.outputCost != null ? `${fmtPrice(v.inputCost)} in · ${fmtPrice(v.outputCost)} out` : "",
+        `${v.requests.toLocaleString()} req`,
+        v.tokens ? fmtTokens(v.tokens) : "",
+        v.outputTokPerSec != null ? `${fmtTokPerSec(v.outputTokPerSec)}${speedSuffix}` : "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      const copy = `<button type="button" class="mcopy" data-copy="${esc(v.name)}" title="Copy model name" aria-label="Copy ${esc(v.name)}">${COPY_ICON}</button>`;
+      return `<div class="mvariant">
+        <div class="mv-head"><span class="mv-name">${esc(v.name)}</span>${copy}</div>
+        <div class="mv-meta">${v.provider ? providerChip(v.provider) : ""}<span>${meta}</span></div>
+      </div>`;
+    })
+    .join("")}</div>`;
+}
+
 /** A chunky panel per model: identity on the left, labelled stats on the right. */
 function modelCard(m: ModelEntry, allTime: boolean): string {
   const speedLabel = allTime ? "Speed · 7d" : "Speed";
@@ -938,6 +1005,8 @@ function modelCard(m: ModelEntry, allTime: boolean): string {
       ${providers.length ? `<div class="mchips">${providers.map(providerChip).join("")}</div>` : ""}
       ${upstreams.length ? `<div class="mup">${upstreams.map((u) => `<span>${esc(u)}</span>`).join("")}</div>` : ""}
       ${price}
+      ${splitBar(m.split)}
+      ${variantRows(m.variants, allTime)}
     </div>
     <div class="mstats">
       ${stat("Requests", m.requests ? m.requests.toLocaleString() : dash)}

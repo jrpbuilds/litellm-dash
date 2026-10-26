@@ -280,6 +280,59 @@ function splitList(v: unknown): string[] {
   return v.split(",").filter(Boolean).sort();
 }
 
+/** Per-upstream slice of one model group's usage — who actually served what
+ *  under a model_name. Feeds the models page's provider split bar and the
+ *  variant rows (e.g. glm-5.3-flash-uncensored traffic logs under the
+ *  glm-5.3-flash group with its own upstream). Failed probes can carry a
+ *  NULL upstream/provider; their counts stay in the group totals. */
+export interface UpstreamUsage {
+  group: string;
+  upstreamModel: string | null;
+  provider: string | null;
+  requests: number;
+  tokens: number;
+  failures: number;
+  /** Successful-request output tokens / milliseconds — the raw material for
+   *  speed, exported so callers can aggregate speed across slices exactly. */
+  outTokens: number;
+  outMs: number;
+  outputTokPerSec: number | null;
+}
+
+export function modelUpstreams(db: UsageDb, days: DaysOrAll, now = Date.now()): UpstreamUsage[] {
+  const since = days === "all" ? null : windowStart(days, now);
+  const rows =
+    db.all(
+      `SELECT COALESCE(model_group, model) AS grp,
+              upstream_model,
+              provider,
+              COUNT(*) AS requests,
+              COALESCE(SUM(total_tokens), 0) AS tokens,
+              SUM(CASE WHEN status != 'success' THEN 1 ELSE 0 END) AS failures,
+              SUM(CASE WHEN status = 'success' AND duration_ms > 0 THEN completion_tokens END) AS out_tokens,
+              SUM(CASE WHEN status = 'success' AND duration_ms > 0 THEN duration_ms END) AS out_ms
+       FROM requests
+       WHERE COALESCE(model_group, model) != '' ${since ? "AND ts >= ?" : ""}
+       GROUP BY grp, upstream_model, provider
+       ORDER BY grp, upstream_model`,
+      ...(since ? [since] : []),
+    ) ?? [];
+  return rows.map((r) => {
+    const outMs = num(r.out_ms);
+    return {
+      group: String(r.grp),
+      upstreamModel: r.upstream_model == null ? null : String(r.upstream_model),
+      provider: r.provider == null ? null : String(r.provider),
+      requests: num(r.requests),
+      tokens: num(r.tokens),
+      failures: num(r.failures),
+      outTokens: num(r.out_tokens),
+      outMs,
+      outputTokPerSec: outMs > 0 ? (num(r.out_tokens) / outMs) * 1000 : null,
+    };
+  });
+}
+
 const CSV_COLUMNS = [
   "ts",
   "model",

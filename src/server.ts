@@ -10,7 +10,28 @@ import { authMode, type Config } from "./config";
 import { makeModelInfoFetcher, type ModelInfo, type ModelInfoFetcher } from "./modelinfo";
 import * as q from "./db";
 
-type ModelCard = ModelInfo & q.ModelUsage & { retired: boolean };
+type ProviderSplit = { provider: string; requests: number; tokens: number };
+
+/** An advertised variant folded into its parent class card: its own catalog
+ *  facts (copyable id, ctx, pricing) plus the usage its upstream served
+ *  under the parent's group. */
+type VariantCard = ModelInfo & {
+  provider: string | null;
+  requests: number;
+  tokens: number;
+  failures: number;
+  outputTokPerSec: number | null;
+};
+
+type ModelCard = ModelInfo &
+  q.ModelUsage & {
+    retired: boolean;
+    /** Per-provider request split of this group's traffic; set only when it
+     *  spans 2+ providers (a single provider needs no bar). */
+    split?: ProviderSplit[];
+    /** Advertised variants whose traffic logs under this group's name. */
+    variants?: VariantCard[];
+  };
 
 const NO_USAGE: q.ModelUsage = {
   requests: 0,
@@ -28,10 +49,12 @@ const NO_USAGE: q.ModelUsage = {
  * On the all-time view, tok/s stays windowed (last 7 days) — a lifetime
  * average would blend in a model's entire history. */
 async function buildModelsPayload(db: q.UsageDb, modelInfo: ModelInfoFetcher, days: q.DaysOrAll) {
-  const [info, usage, recent] = await Promise.all([
+  const [info, usage, recent, ups, upsRecent] = await Promise.all([
     modelInfo().catch(() => ({ configured: false, models: [] as ModelInfo[] })),
     Promise.resolve(q.modelUsage(db, days)),
     days === "all" ? Promise.resolve(q.modelUsage(db, 7)) : Promise.resolve(null),
+    Promise.resolve(q.modelUpstreams(db, days)),
+    days === "all" ? Promise.resolve(q.modelUpstreams(db, 7)) : Promise.resolve(null),
   ]);
   if (recent) {
     for (const [name, u] of recent) {
@@ -48,8 +71,89 @@ async function buildModelsPayload(db: q.UsageDb, modelInfo: ModelInfoFetcher, da
   for (const [name, u] of usage) {
     if (!seen.has(name)) models.push({ ...blankModel(name), ...u, retired: info.configured });
   }
+  foldVariants(models, info.models, usage, ups, upsRecent);
+  attachSplits(models, ups);
   models.sort(byName);
   return { days, dbAvailable: db.available, proxyConfigured: info.configured, models };
+}
+
+/** Model name a full upstream string points at — "openai/x" -> "x". */
+function suffixName(upstream: string | null): string | null {
+  if (!upstream) return null;
+  const i = upstream.lastIndexOf("/");
+  return i >= 0 ? upstream.slice(i + 1) : upstream;
+}
+
+/** Folds advertised variant models into their parent class card. A variant
+ *  is a catalog name that (a) never logged as its own model_group and (b)
+ *  appears as the upstream suffix of exactly one other group's rows — e.g.
+ *  glm-5.3-flash-uncensored traffic logs under glm-5.3-flash with upstream
+ *  openai/glm-5.3-flash-uncensored. The parent card gains the variant's
+ *  catalog facts and its traffic share; the standalone card disappears.
+ *  Variants with their own group rows, or never-called ones (no rows to
+ *  detect them by), stay standalone. */
+function foldVariants(
+  models: ModelCard[],
+  catalog: ModelInfo[],
+  usage: Map<string, q.ModelUsage>,
+  ups: q.UpstreamUsage[],
+  upsRecent: q.UpstreamUsage[] | null,
+): void {
+  const catalogByName = new Map(catalog.map((m) => [m.name, m]));
+  const parentOf = new Map<string, string | null>();
+  for (const row of ups) {
+    const variant = suffixName(row.upstreamModel);
+    if (!variant || variant === row.group) continue;
+    if (usage.has(variant) || !catalogByName.has(variant)) continue;
+    const prev = parentOf.get(variant);
+    parentOf.set(variant, prev === undefined ? row.group : prev === row.group ? prev : null);
+  }
+  const speedRows = upsRecent ?? ups;
+  for (const [variant, group] of parentOf) {
+    if (!group) continue;
+    const card = models.find((m) => m.name === group);
+    const catalogEntry = catalogByName.get(variant);
+    if (!card || !catalogEntry) continue;
+    const rows = ups.filter((r) => r.group === group && suffixName(r.upstreamModel) === variant);
+    const speedRowsFor = speedRows.filter((r) => r.group === group && suffixName(r.upstreamModel) === variant);
+    const sum = (pick: (r: q.UpstreamUsage) => number) => rows.reduce((s, r) => s + pick(r), 0);
+    const outTok = speedRowsFor.reduce((s, r) => s + r.outTokens, 0);
+    const outMs = speedRowsFor.reduce((s, r) => s + r.outMs, 0);
+    const top = [...rows].sort((a, b) => b.requests - a.requests)[0];
+    const variantCard: VariantCard = {
+      ...catalogEntry,
+      provider: top?.provider ?? catalogEntry.providers[0] ?? null,
+      requests: sum((r) => r.requests),
+      tokens: sum((r) => r.tokens),
+      failures: sum((r) => r.failures),
+      outputTokPerSec: outMs > 0 ? (outTok / outMs) * 1000 : null,
+    };
+    card.variants = [...(card.variants ?? []), variantCard].sort((a, b) => a.name.localeCompare(b.name));
+    models.splice(
+      models.findIndex((m) => m.name === variant),
+      1,
+    );
+  }
+}
+
+/** Attaches each card's per-provider request split, biggest first. */
+function attachSplits(models: ModelCard[], ups: q.UpstreamUsage[]): void {
+  const byGroup = new Map<string, Map<string, ProviderSplit>>();
+  for (const r of ups) {
+    if (!r.provider) continue;
+    let agg = byGroup.get(r.group);
+    if (!agg) byGroup.set(r.group, (agg = new Map()));
+    const cur = agg.get(r.provider) ?? { provider: r.provider, requests: 0, tokens: 0 };
+    cur.requests += r.requests;
+    cur.tokens += r.tokens;
+    agg.set(r.provider, cur);
+  }
+  for (const m of models) {
+    const agg = byGroup.get(m.name);
+    if (!agg) continue;
+    const split = [...agg.values()].sort((a, b) => b.requests - a.requests);
+    if (split.length >= 2) m.split = split;
+  }
 }
 
 /** Alphabetical by name; retired models (in the log, gone from the gateway)
@@ -64,7 +168,7 @@ function byName(a: ModelCard, b: ModelCard): number {
 function blankModel(name: string): ModelInfo {
   return {
     name,
-    provider: null,
+    providers: [],
     upstream: null,
     contextWindow: null,
     maxOutput: null,

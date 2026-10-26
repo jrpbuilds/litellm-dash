@@ -189,6 +189,81 @@ describe("models endpoint", () => {
     }
   });
 
+  test("an advertised variant folds into its parent card", async () => {
+    // Variant traffic logs under the parent's group (usage_logger _MODEL_CLASS):
+    // parent card keeps the class totals, variant rides along with its share.
+    const db = tempUsageDb();
+    db.seed(
+      { ts: iso(Date.now()), model: "flash", provider: "zai-coding", upstream_model: "zai/flash", prompt_tokens: 5, completion_tokens: 5 },
+      { ts: iso(Date.now()), model: "flash", provider: "routeway", upstream_model: "openai/flash-uncensored", prompt_tokens: 3, completion_tokens: 9 },
+      { ts: iso(Date.now()), model: "flash", provider: "routeway", upstream_model: "openai/flash-uncensored", status: "failure", error: "boom" },
+    );
+    const advertised = [
+      { model_name: "flash", litellm_params: { model: "zai/flash" } },
+      {
+        model_name: "flash-uncensored",
+        litellm_params: { model: "openai/flash-uncensored", api_base: "https://api.routeway.ai/v1" },
+        model_info: { max_model_len: 262_144 },
+        input_cost_per_token: 3.5e-7,
+        output_cost_per_token: 1.4e-6,
+      },
+    ];
+    const srv = await startServer(testConfig(), {
+      db: db.db,
+      modelInfo: stubModelInfo({ configured: true, models: parseModels(advertised) }),
+    });
+    try {
+      const body = await (await srv.get("/api/models?days=7")).json();
+      expect(body.models.map((m: { name: string }) => m.name)).toEqual(["flash"]);
+      const flash = body.models[0];
+      expect(flash.requests).toBe(3);
+      expect(flash.variants).toHaveLength(1);
+      expect(flash.variants[0]).toMatchObject({
+        name: "flash-uncensored",
+        provider: "routeway",
+        requests: 2,
+        tokens: 12,
+        contextWindow: 262_144,
+        inputCost: 3.5e-7,
+      });
+      // biggest provider first; the failure row stays in the group totals
+      expect(flash.split).toEqual([
+        { provider: "routeway", requests: 2, tokens: 12 },
+        { provider: "zai-coding", requests: 1, tokens: 10 },
+      ]);
+    } finally {
+      srv.stop();
+      db.cleanup();
+    }
+  });
+
+  test("a variant that logs under its own name stays standalone", async () => {
+    const db = tempUsageDb();
+    db.seed(
+      { ts: iso(Date.now()), model: "flash", provider: "zai-coding", upstream_model: "zai/flash" },
+      { ts: iso(Date.now()), model: "flash-uncensored", provider: "routeway", upstream_model: "openai/flash-uncensored" },
+    );
+    const advertised = [
+      { model_name: "flash", litellm_params: { model: "zai/flash" } },
+      {
+        model_name: "flash-uncensored",
+        litellm_params: { model: "openai/flash-uncensored", api_base: "https://api.routeway.ai/v1" },
+      },
+    ];
+    const srv = await startServer(testConfig(), {
+      db: db.db,
+      modelInfo: stubModelInfo({ configured: true, models: parseModels(advertised) }),
+    });
+    try {
+      const body = await (await srv.get("/api/models?days=7")).json();
+      expect(body.models.map((m: { name: string }) => m.name)).toEqual(["flash", "flash-uncensored"]);
+      expect(body.models[0].variants).toBeUndefined();
+    } finally {
+      srv.stop();
+      db.cleanup();
+    }
+  });
+
   test("proxy failure degrades to usage-only", async () => {
     const srv = await startServer(testConfig(), {
       db: data.db,
