@@ -409,9 +409,10 @@ function renderChart(c: ChartResp) {
     }),
   }));
 
-  // Per-day multi-line chart: one thin line + flat translucent area fill per
-  // series, straight segments, no dots — the filled areas blend where series
-  // overlap. Paint order follows the totals sort (smallest drawn last, on top).
+  // Per-day STACKED line chart: series[0] (biggest) at the base, each next
+  // series layered on top of the cumulative sum — so the TOP line's height
+  // is that day's total. Straight segments, flat translucent fills between
+  // each pair of boundaries; the fills blend where layers are thin.
   const dayTotals = labels.map((_, i) => series.reduce((m, s) => m + s.daily[i], 0));
   const cumTotal = dayTotals.map((_, i) => dayTotals.slice(0, i + 1).reduce((m, v) => m + v, 0));
   const max = Math.max(1, ...dayTotals);
@@ -504,34 +505,49 @@ function drawChartFrame() {
   const layout = barLayout(w, labels.length);
   const y = (v: number) => h - (v / max) * (h - 10);
   const scaled = series.map((s) => s.daily.map((v) => v * chartProgress));
+  // cumulative heights: series[0] at the base, each next stacked on top —
+  // cum[last][b] is that day's total (progress-scaled during grow-in)
+  const n = labels.length;
+  const cum = scaled.map(() => new Array<number>(n).fill(0));
+  for (let si = 0; si < scaled.length; si++)
+    for (let b = 0; b < n; b++)
+      cum[si][b] = (si > 0 ? cum[si - 1][b] : 0) + scaled[si][b];
 
   ctx.lineWidth = 1.6;
   ctx.lineJoin = "round";
+  const ptsAt = (vals: number[]) => vals.map((v, b) => [layout.cx(b), y(v)] as const);
   for (let si = 0; si < scaled.length; si++) {
-    const pts = scaled[si].map((v, b) => [layout.cx(b), y(v)] as const);
-    if (!pts.length) continue;
-    // flat low-opacity area down to the baseline — translucent so overlaps blend
+    const top = ptsAt(cum[si]);
+    if (!top.length) continue;
+    const bottom = si > 0 ? ptsAt(cum[si - 1]) : null;
+    // fill between this boundary and the one below (baseline for the first)
     ctx.beginPath();
-    ctx.moveTo(pts[0][0], h);
-    for (const [px, py] of pts) ctx.lineTo(px, py);
-    ctx.lineTo(pts[pts.length - 1][0], h);
+    ctx.moveTo(top[0][0], top[0][1]);
+    for (let b = 1; b < top.length; b++) ctx.lineTo(top[b][0], top[b][1]);
+    if (bottom) {
+      for (let b = bottom.length - 1; b >= 0; b--) ctx.lineTo(bottom[b][0], bottom[b][1]);
+    } else {
+      ctx.lineTo(top[top.length - 1][0], h);
+      ctx.lineTo(top[0][0], h);
+    }
     ctx.closePath();
     ctx.fillStyle = series[si].color + "26";
     ctx.fill();
-    // the line itself
+    // the boundary line itself
     ctx.beginPath();
-    ctx.moveTo(pts[0][0], pts[0][1]);
-    for (let b = 1; b < pts.length; b++) ctx.lineTo(pts[b][0], pts[b][1]);
+    ctx.moveTo(top[0][0], top[0][1]);
+    for (let b = 1; b < top.length; b++) ctx.lineTo(top[b][0], top[b][1]);
     ctx.strokeStyle = series[si].color;
     ctx.stroke();
   }
 
-  // marker dots on the selected bucket
+  // marker dots on the selected bucket — one per boundary, the last dot sits
+  // on the top line, i.e. the day's total
   if (selectedBucket !== null && selectedBucket < labels.length) {
     const cx = layout.cx(selectedBucket);
     for (let si = 0; si < scaled.length; si++) {
       ctx.beginPath();
-      ctx.arc(cx, y(scaled[si][selectedBucket]), 3, 0, Math.PI * 2);
+      ctx.arc(cx, y(cum[si][selectedBucket]), 3, 0, Math.PI * 2);
       ctx.fillStyle = series[si].color;
       ctx.fill();
     }
