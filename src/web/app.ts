@@ -678,6 +678,8 @@ type ModelsResp = {
 };
 
 let modelsCache: ModelsResp | null = null;
+let modelsSummaryCache: Summary | null = null;
+let modelsRenderKey = "";
 
 const PAGE_SIZE = 50;
 /** Which request row is expanded (mobile accordion — one at a time). */
@@ -957,19 +959,20 @@ if (modelsGrid) {
 }
 
 /** The models page is all-time: lifetime totals per model, with tok/s kept
- *  on a recent window server-side and the stat cards switched to lifetime. */
+ *  on a recent window server-side and the stat cards switched to lifetime.
+ *  A cached payload paints instantly, but a fresh fetch ALWAYS follows — the
+ *  cards must overwrite whatever period the usage view last rendered, and
+ *  the model stats must not go stale between visits. */
 async function refreshModels() {
-  if (modelsCache) {
-    renderModels(modelsCache);
-    return;
-  }
-  const grid = $("modelsgrid");
-  grid.innerHTML = `<div class="models-none skelbar">…</div>`;
+  if (modelsCache) renderModels(modelsCache);
+  else $("modelsgrid").innerHTML = `<div class="models-none skelbar">…</div>`;
+  if (modelsSummaryCache) renderCards(modelsSummaryCache);
   const [resp, s] = await Promise.all([
     getJson<ModelsResp>("/api/models?days=all"),
     getJson<Summary>("/api/summary?days=all"),
   ]);
   if (s) {
+    modelsSummaryCache = s;
     renderCards(s);
     $("updated").textContent = s.dbAvailable
       ? `Updated ${new Date().toLocaleTimeString("en-GB", { hour12: false })}`
@@ -977,11 +980,18 @@ async function refreshModels() {
     setStatus(s.dbAvailable ? "live" : "nodb");
   }
   if (!resp) {
-    grid.innerHTML = `<div class="models-none">Failed to load models. Is the API reachable?</div>`;
+    if (!modelsCache) {
+      $("modelsgrid").innerHTML = `<div class="models-none">Failed to load models. Is the API reachable?</div>`;
+    }
     return;
   }
   modelsCache = resp;
-  renderModels(resp);
+  // Skip the DOM rebuild when nothing changed — the poll reuses this path.
+  const key = JSON.stringify(resp.models);
+  if (key !== modelsRenderKey) {
+    modelsRenderKey = key;
+    renderModels(resp);
+  }
 }
 
 /** Append the next PAGE_SIZE older requests below what's already shown. */
