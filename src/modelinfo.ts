@@ -207,8 +207,6 @@ export function makeModelInfoFetcher(cfg: Config, fetchImpl: FetchLike = fetch):
       // (they bill per image, not per token). Inject explicit zero rates so
       // the dashboard shows $0.00 instead of an en dash.
       const IMAGE_MODEL_PRICING: Record<string, { inputCost: number; outputCost: number }> = {
-        agnes_image_2_5_flash: { inputCost: 0, outputCost: 0 },
-        seedream_v5_lite: { inputCost: 0, outputCost: 0 },
         seedream_v5_pro: { inputCost: 0, outputCost: 0 },
       };
       for (const m of models) {
