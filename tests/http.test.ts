@@ -129,7 +129,7 @@ describe("models endpoint", () => {
       expect(body.models).toEqual([
         {
           name: "alpha",
-          provider: "openai",
+          providers: ["openai"],
           upstream: "openai/alpha-v2",
           contextWindow: 128_000,
           maxOutput: 16_000,
@@ -149,7 +149,7 @@ describe("models endpoint", () => {
         },
         {
           name: "never-called",
-          provider: "vertex",
+          providers: ["vertex"],
           upstream: "vertex/gemini",
           contextWindow: null,
           maxOutput: null,
@@ -245,8 +245,8 @@ describe("model info fetcher", () => {
     expect(parseModels(null)).toEqual([]);
     const models = parseModels(payload);
     expect(models.map((m) => m.name)).toEqual(["kept", "reasoner"]);
-    expect(models[0]).toMatchObject({ provider: "custom", contextWindow: 4096, upstream: "openai/kept" });
-    expect(models[1]).toMatchObject({ reasoning: true, provider: null });
+    expect(models[0]).toMatchObject({ providers: ["custom"], contextWindow: 4096, upstream: "openai/kept" });
+    expect(models[1]).toMatchObject({ reasoning: true, providers: [] });
   });
 
   test("parses the public /v1/models list without treating owned_by as the provider", () => {
@@ -259,13 +259,34 @@ describe("model info fetcher", () => {
     expect(models).toEqual([
       expect.objectContaining({
         name: "glm-5.3",
-        provider: null,
+        providers: [],
         mode: "chat",
         contextWindow: 1_000_000,
         maxOutput: 128_000,
       }),
       expect.objectContaining({ name: "unused", contextWindow: null, maxOutput: null }),
     ]);
+  });
+
+  test("multi-deployment aliases union serving providers in config order", async () => {
+    const fetchImpl: FetchLike = async (input) => {
+      if (String(input).endsWith("/v1/models")) {
+        return Response.json({ data: [{ id: "glm-5.3" }] });
+      }
+      return Response.json({
+        data: [
+          { model_name: "glm-5.3", litellm_params: { model: "zai/glm-5.3" } },
+          { model_name: "glm-5.3", litellm_params: { model: "openai/glm-5.3", api_base: "https://opencode.ai/zen/go/v1" } },
+          { model_name: "q", litellm_params: { model: "openai/q", api_base: "https://api.routeway.ai/v1" } },
+        ],
+      });
+    };
+    const cfg = testConfig({ proxyUrl: "https://litellm.example/v1", proxyToken: "master" });
+    const ok = await makeModelInfoFetcher(cfg, fetchImpl)();
+    const glm = ok.models.find((m) => m.name === "glm-5.3");
+    // primary deployment (zai prefix brand) first, fallback (host brand) second
+    expect(glm?.providers).toEqual(["zai-coding", "opencode-go"]);
+    expect(ok.models.find((m) => m.name === "q")?.providers).toEqual(["routeway"]);
   });
 
   test("only http(s) proxy URLs are fetched", () => {
@@ -294,7 +315,7 @@ describe("model info fetcher", () => {
     const ok = await fetcher();
     expect(ok.configured).toBe(true);
     expect(ok.models.map((m) => m.name)).toEqual(["listed", "enriched"]);
-    expect(ok.models[0]).toMatchObject({ contextWindow: 8000, mode: "chat", provider: null });
+    expect(ok.models[0]).toMatchObject({ contextWindow: 8000, mode: "chat", providers: [] });
     expect(await fetcher()).toEqual(ok);
     expect(calls).toEqual([
       { url: "https://litellm.example/v1/models", authorization: null },

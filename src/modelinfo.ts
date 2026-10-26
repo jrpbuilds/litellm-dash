@@ -9,9 +9,12 @@ import type { Config } from "./config";
 export interface ModelInfo {
   /** Public model alias clients request, e.g. "glm-5.3-flash". */
   name: string;
-  /** Provider prefix of the upstream, e.g. "openai" from "openai/glm-5.3". */
-  provider: string | null;
-  /** Full litellm model string, e.g. "openai/glm-5.3-flash". */
+  /** Serving providers, config order (primary first) — e.g. ["zai-coding",
+   *  "opencode-go"] for an alias with two deployments. Derived from each
+   *  deployment's api_base host / provider prefix, NOT the wire-protocol
+   *  prefix alone: "openai/x" pointed at routeway shows "routeway". */
+  providers: string[];
+  /** Full litellm model string of the first deployment, e.g. "zai/glm-5.3". */
   upstream: string | null;
   contextWindow: number | null;
   maxOutput: number | null;
@@ -28,7 +31,7 @@ interface RawModel {
   /** Public alias. `/model/info` uses model_name; `/v1/models` uses id. */
   model_name?: unknown;
   id?: unknown;
-  litellm_params?: { model?: unknown; custom_llm_provider?: unknown };
+  litellm_params?: { model?: unknown; custom_llm_provider?: unknown; api_base?: unknown };
   model_info?: Record<string, unknown>;
   max_model_len?: unknown;
   max_input_tokens?: unknown;
@@ -48,6 +51,38 @@ const num = (v: unknown): number | null => (typeof v === "number" && Number.isFi
 
 function bool(v: unknown): boolean {
   return v === true || v === "true" || v === 1;
+}
+
+/** api_base host -> serving-provider brand. Mirrors the usage logger's
+ * _PROVIDER_BY_BASE (and the pinned chip colors) so model chips match the
+ * log table. */
+const HOST_PROVIDER: [RegExp, string][] = [
+  [/^api\.z\.ai$/i, "zai-coding"],
+  [/opencode\.ai$/i, "opencode-go"],
+  [/^api\.routeway\.ai$/i, "routeway"],
+];
+/** Native providers that hide their api_base — brand by prefix instead. */
+const PREFIX_PROVIDER: Record<string, string> = { zai: "zai-coding" };
+
+/** The brand actually serving one deployment: api_base host first, then
+ * known provider prefixes, then the raw LiteLLM prefix ("openai" names the
+ * wire format, not the vendor). */
+function deploymentProvider(m: RawModel): string | null {
+  const lp = m.litellm_params ?? {};
+  const base = typeof lp.api_base === "string" ? lp.api_base : "";
+  if (base) {
+    try {
+      const host = new URL(base).hostname;
+      for (const [re, name] of HOST_PROVIDER) if (re.test(host)) return name;
+    } catch {
+      // not a parsable URL — fall through to the prefix
+    }
+  }
+  const upstream = typeof lp.model === "string" ? lp.model : null;
+  const prefix = upstream?.split("/", 1)[0] ?? null;
+  if (prefix && PREFIX_PROVIDER[prefix]) return PREFIX_PROVIDER[prefix];
+  if (typeof lp.custom_llm_provider === "string") return lp.custom_llm_provider;
+  return prefix;
 }
 
 /**
@@ -75,17 +110,10 @@ export function parseModels(raw: unknown): ModelInfo[] {
     if (!name) continue;
     const upstream = typeof m.litellm_params?.model === "string" ? m.litellm_params.model : null;
     const info = (m.model_info ?? {}) as Record<string, unknown>;
-    const prefix = upstream?.split("/", 1)[0];
-    const provider = typeof m.litellm_params?.custom_llm_provider === "string"
-      ? m.litellm_params.custom_llm_provider
-      : prefix || null;
-    // Normalize Agnes providers to the single display name agnes-ai.
-    const agnesUpstream = typeof upstream === "string" && upstream.includes("agnes");
-    const agnesName = typeof name === "string" && name.toLowerCase().includes("agnes");
-const displayProvider = (agnesUpstream || agnesName) ? "agnes-ai" : provider;
+    const provider = deploymentProvider(m);
     out.push({
       name,
-      provider: displayProvider,
+      providers: provider ? [provider] : [],
       upstream,
       // max_model_len may live at top level or inside model_info depending on
       // LiteLLM version; max_input_tokens is the context when present.
@@ -170,6 +198,7 @@ function mergeModel(info: ModelInfo | undefined, listed: ModelInfo | undefined):
   if (!other) return base;
   return {
     ...base,
+    providers: base.providers.length ? base.providers : other.providers,
     contextWindow: base.contextWindow ?? other.contextWindow,
     maxOutput: base.maxOutput ?? other.maxOutput,
     mode: base.mode ?? other.mode,
@@ -195,7 +224,25 @@ export function makeModelInfoFetcher(cfg: Config, fetchImpl: FetchLike = fetch):
         });
         if (raw) detailed = parseModels(raw);
       }
-      const byName = new Map(detailed.map((m) => [m.name, m]));
+      const byName = new Map<string, ModelInfo>();
+      for (const m of detailed) {
+        const cur = byName.get(m.name);
+        if (!cur) {
+          byName.set(m.name, m);
+          continue;
+        }
+        // Same alias, another deployment: union the serving providers in
+        // config order (primary first) and keep the richest metadata.
+        cur.providers = [...cur.providers, ...m.providers.filter((p) => !cur.providers.includes(p))];
+        cur.contextWindow ??= m.contextWindow;
+        cur.maxOutput ??= m.maxOutput;
+        cur.mode ??= m.mode;
+        cur.vision ||= m.vision;
+        cur.tools ||= m.tools;
+        cur.reasoning ||= m.reasoning;
+        cur.inputCost ??= m.inputCost;
+        cur.outputCost ??= m.outputCost;
+      }
       const seen = new Set<string>();
       const models: ModelInfo[] = [];
       for (const m of listed) {

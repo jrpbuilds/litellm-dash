@@ -649,7 +649,7 @@ type RecentResp = {
 
 type ModelEntry = {
   name: string;
-  provider: string | null;
+  providers: string[];
   upstream: string | null;
   contextWindow: number | null;
   maxOutput: number | null;
@@ -903,7 +903,7 @@ function renderModels(resp: ModelsResp) {
 /** A chunky panel per model: identity on the left, labelled stats on the right. */
 function modelCard(m: ModelEntry, allTime: boolean): string {
   const speedLabel = allTime ? "Speed · 7d" : "Speed";
-  const providers = m.provider ? [m.provider] : m.logProviders;
+  const providers = m.providers.length ? m.providers : m.logProviders;
   const upstreams = m.upstream ? [m.upstream] : m.logUpstreams;
   const caps = CAP_ICONS.filter(([, key]) => (key === "reasoning" ? m.reasoning : key === "tools" ? m.tools : m.vision))
     .map(([, key, svg]) => `<span class="mcap" title="${key}">${svg}</span>`)
