@@ -299,13 +299,13 @@ function barLayout(w: number, n: number) {
   };
 }
 
-type BarFrame = {
+type ChartFrame = {
   canvas: HTMLCanvasElement;
-  series: { barTop: string; barBottom: string; daily: number[] }[];
+  series: { color: string; daily: number[] }[];
   labels: string[];
   max: number;
 };
-let frame: BarFrame | null = null;
+let frame: ChartFrame | null = null;
 let chartProgress = 1; // 0..1 grow-in ease
 let chartRaf = 0;
 let chartKey = ""; // data last drawn — identical data never re-animates
@@ -403,16 +403,15 @@ function renderChart(c: ChartResp) {
   const series = names.map((name) => ({
     name,
     color: colors.get(name)!.line,
-    barTop: colors.get(name)!.barTop,
-    barBottom: colors.get(name)!.barBottom,
     daily: labels.map((b) => {
       const hit = rows.find((r) => r.b === b && r.name === name);
       return hit ? (useReq ? hit.requests : hit.tokens) : 0;
     }),
   }));
 
-  // Per-day stacked bars (Grok-style): bar height = that day's total, each
-  // segment a model/provider in its stable color, biggest series at the base.
+  // Per-day multi-line chart: one thin line + flat translucent area fill per
+  // series, straight segments, no dots — the filled areas blend where series
+  // overlap. Paint order follows the totals sort (smallest drawn last, on top).
   const dayTotals = labels.map((_, i) => series.reduce((m, s) => m + s.daily[i], 0));
   const cumTotal = dayTotals.map((_, i) => dayTotals.slice(0, i + 1).reduce((m, v) => m + v, 0));
   const max = Math.max(1, ...dayTotals);
@@ -429,19 +428,12 @@ function renderChart(c: ChartResp) {
     animateBars();
   }
 
-  // axes + gridlines
+  // axes — the line style keeps the plot itself clean, no gridlines
   const ticks = niceTicks(max);
   $("yaxis").innerHTML = ticks
     .slice()
     .reverse()
     .map((t) => `<span>${t === 0 ? "0" : fmt(t)}</span>`)
-    .join("");
-  const plotH = canvas.clientHeight;
-  $("gridlines").innerHTML = ticks
-    .map((t) => {
-      const top = plotH - (t / max) * (plotH - 10);
-      return `<div class="h" style="top:${top}px"></div>`;
-    })
     .join("");
   const step = Math.ceil(labels.length / 7);
   const layout = barLayout(canvas.clientWidth, labels.length);
@@ -494,8 +486,9 @@ function renderChart(c: ChartResp) {
   }
 }
 
-/** Paint one frame of the stacked bar chart at the current grow-in progress.
- *  The bucket under the cursor stays lit; its neighbours recede. */
+/** Paint one frame of the multi-line chart at the current grow-in progress.
+ *  Thin straight segments over flat translucent area fills; the selected
+ *  bucket gets a marker dot per series and the crosshair shows in the plot. */
 function drawChartFrame() {
   if (!frame) return;
   const { canvas, series, labels, max } = frame;
@@ -511,45 +504,41 @@ function drawChartFrame() {
   const layout = barLayout(w, labels.length);
   const y = (v: number) => h - (v / max) * (h - 10);
   const scaled = series.map((s) => s.daily.map((v) => v * chartProgress));
-  const radius = Math.min(3, layout.barW / 4);
-  const rounded = typeof ctx.roundRect === "function";
 
-  for (let b = 0; b < labels.length; b++) {
-    const x0 = layout.x0(b);
-    let stack = 0;
-    let topSi = -1;
-    for (let si = scaled.length - 1; si >= 0; si--)
-      if (scaled[si][b] > 0) {
-        topSi = si;
-        break;
-      }
-    if (topSi < 0) continue;
-    ctx.globalAlpha = selectedBucket === null || selectedBucket === b ? 1 : 0.42;
+  ctx.lineWidth = 1.6;
+  ctx.lineJoin = "round";
+  for (let si = 0; si < scaled.length; si++) {
+    const pts = scaled[si].map((v, b) => [layout.cx(b), y(v)] as const);
+    if (!pts.length) continue;
+    // flat low-opacity area down to the baseline — translucent so overlaps blend
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], h);
+    for (const [px, py] of pts) ctx.lineTo(px, py);
+    ctx.lineTo(pts[pts.length - 1][0], h);
+    ctx.closePath();
+    ctx.fillStyle = series[si].color + "26";
+    ctx.fill();
+    // the line itself
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let b = 1; b < pts.length; b++) ctx.lineTo(pts[b][0], pts[b][1]);
+    ctx.strokeStyle = series[si].color;
+    ctx.stroke();
+  }
+
+  // marker dots on the selected bucket
+  if (selectedBucket !== null && selectedBucket < labels.length) {
+    const cx = layout.cx(selectedBucket);
     for (let si = 0; si < scaled.length; si++) {
-      const v = scaled[si][b];
-      if (v <= 0) continue;
-      const yBottom = y(stack);
-      const yTop = y(stack + v);
-      const segH = Math.max(1, yBottom - yTop);
-      const grad = ctx.createLinearGradient(0, yTop, 0, yBottom);
-      grad.addColorStop(0, series[si].barTop);
-      grad.addColorStop(1, series[si].barBottom);
-      ctx.fillStyle = grad;
-      // round only the top edge of the topmost segment
-      if (rounded && si === topSi && radius > 0 && segH > radius * 2) {
-        ctx.beginPath();
-        ctx.roundRect(x0, yTop, layout.barW, segH, [radius, radius, 0, 0]);
-        ctx.fill();
-      } else {
-        ctx.fillRect(x0, yTop, layout.barW, segH);
-      }
-      stack += v;
+      ctx.beginPath();
+      ctx.arc(cx, y(scaled[si][selectedBucket]), 3, 0, Math.PI * 2);
+      ctx.fillStyle = series[si].color;
+      ctx.fill();
     }
   }
-  ctx.globalAlpha = 1;
 }
 
-/** Ease the bars in from zero. Skipped for reduced motion, and identical
+/** Ease the lines in from zero. Skipped for reduced motion, and identical
  *  data (poll refreshes, hover re-renders) never re-animates. A background
  *  tab never fires rAF, so a timeout snaps the final frame in afterwards. */
 function animateBars(duration = 460) {
