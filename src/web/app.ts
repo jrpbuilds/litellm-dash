@@ -944,26 +944,32 @@ function splitBar(split: ProviderSplit[] | undefined): string {
   return `<div class="msplit" role="img" aria-label="Requests by provider">${segs}</div><div class="msplit-legend">${legend}</div>`;
 }
 
-/** Folded variant sub-rows: the variant's identity (provider chip, copyable
- *  client id) and catalog facts plus its share of the parent's traffic. */
+/** Folded variant strips: identity + catalog facts on the left, a compact
+ *  stats grid on the right — the parent card's anatomy at a smaller scale,
+ *  so the variant fills the card instead of leaving the stats column empty. */
 function variantRows(variants: VariantEntry[] | undefined, allTime: boolean): string {
   if (!variants?.length) return "";
-  const speedSuffix = allTime ? " · 7d" : "";
+  const speedLabel = allTime ? "Speed · 7d" : "Speed";
   return `<div class="mvariants">${variants
     .map((v) => {
       const meta = [
         v.contextWindow ? `${fmtTokens(v.contextWindow)} ctx` : "",
         v.inputCost != null || v.outputCost != null ? `${fmtPrice(v.inputCost)} in · ${fmtPrice(v.outputCost)} out` : "",
-        `${v.requests.toLocaleString()} req`,
-        v.tokens ? fmtTokens(v.tokens) : "",
-        v.outputTokPerSec != null ? `${fmtTokPerSec(v.outputTokPerSec)}${speedSuffix}` : "",
       ]
         .filter(Boolean)
         .join(" · ");
       const copy = `<button type="button" class="mcopy" data-copy="${esc(v.name)}" title="Copy model name" aria-label="Copy ${esc(v.name)}">${COPY_ICON}</button>`;
+      const dash = `<span class="dim">–</span>`;
       return `<div class="mvariant">
-        <div class="mv-head"><span class="mv-name">${esc(v.name)}</span>${copy}</div>
-        <div class="mv-meta">${v.provider ? providerChip(v.provider) : ""}<span>${meta}</span></div>
+        <div class="mvident">
+          <div class="mv-head"><span class="mv-name">${esc(v.name)}</span>${copy}</div>
+          <div class="mv-meta">${v.provider ? providerChip(v.provider) : ""}<span>${meta}</span></div>
+        </div>
+        <div class="mvstats">
+          <div class="mvstat"><span class="mlab">Requests</span><span class="mval">${v.requests ? v.requests.toLocaleString() : dash}</span></div>
+          <div class="mvstat"><span class="mlab">Tokens</span><span class="mval">${v.tokens ? fmtTokens(v.tokens) : dash}</span></div>
+          <div class="mvstat"><span class="mlab">${speedLabel}</span><span class="mval">${v.outputTokPerSec != null ? fmtTokPerSec(v.outputTokPerSec) : dash}</span></div>
+        </div>
       </div>`;
     })
     .join("")}</div>`;
@@ -1006,7 +1012,6 @@ function modelCard(m: ModelEntry, allTime: boolean): string {
       ${upstreams.length ? `<div class="mup">${upstreams.map((u) => `<span>${esc(u)}</span>`).join("")}</div>` : ""}
       ${price}
       ${splitBar(m.split)}
-      ${variantRows(m.variants, allTime)}
     </div>
     <div class="mstats">
       ${stat("Requests", m.requests ? m.requests.toLocaleString() : dash)}
@@ -1016,6 +1021,7 @@ function modelCard(m: ModelEntry, allTime: boolean): string {
       ${stat("Context", m.contextWindow ? fmtTokens(m.contextWindow) : dash)}
       ${stat("Max out", m.maxOutput ? fmtTokens(m.maxOutput) : dash)}
     </div>
+    ${variantRows(m.variants, allTime)}
   </article>`;
 }
 

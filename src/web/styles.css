@@ -942,17 +942,27 @@ tbody tr:hover {
   border-radius: 2px;
   margin-right: 5px;
 }
-/* Folded variant sub-rows: identity + catalog facts + traffic share. */
+/* Folded variant strips: a full-width band under the card's two columns,
+   mirroring the card anatomy at a smaller scale — identity + catalog facts
+   left, compact stats grid right (values one step under the parent's). */
 .modelrow .mvariants {
+  grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
   gap: 9px;
-  width: 100%;
   border-top: 1px solid var(--card-border);
   padding-top: 10px;
   margin-top: 2px;
+  min-width: 0;
 }
 .modelrow .mvariant {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(0, 1.3fr);
+  gap: 8px 18px;
+  align-items: center;
+  min-width: 0;
+}
+.modelrow .mvident {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -990,6 +1000,26 @@ tbody tr:hover {
 .modelrow .mv-meta .chip {
   font-size: 11px;
   padding: 1px 7px;
+}
+.modelrow .mvstats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 14px;
+  min-width: 0;
+  padding-left: 18px;
+  border-left: 1px solid var(--card-border);
+}
+.modelrow .mvstat {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.modelrow .mvstat .mlab {
+  font-size: 9.5px;
+}
+.modelrow .mvstat .mval {
+  font-size: 13px;
 }
 .modelrow .mstats {
   display: grid;
@@ -1053,6 +1083,15 @@ tbody tr:hover {
     border-left: 0;
     border-top: 1px solid var(--card-border);
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  /* variant strips stack: identity above a full-width 3-stat row */
+  .modelrow .mvariant {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .modelrow .mvstats {
+    padding-left: 0;
+    border-left: 0;
   }
 }
 
