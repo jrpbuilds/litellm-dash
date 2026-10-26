@@ -48,16 +48,15 @@ async function buildModelsPayload(db: q.UsageDb, modelInfo: ModelInfoFetcher, da
   for (const [name, u] of usage) {
     if (!seen.has(name)) models.push({ ...blankModel(name), ...u, retired: info.configured });
   }
-  models.sort(bySpeed);
+  models.sort(byName);
   return { days, dbAvailable: db.available, proxyConfigured: info.configured, models };
 }
 
-/** Fastest output rate first, then advertised names, then retired ones. */
-function bySpeed(a: ModelCard, b: ModelCard): number {
-  const tier = (m: ModelCard) => (m.retired ? 2 : m.outputTokPerSec == null ? 1 : 0);
+/** Alphabetical by name; retired models (in the log, gone from the gateway)
+ * group last, still in name order. */
+function byName(a: ModelCard, b: ModelCard): number {
   return (
-    tier(a) - tier(b) ||
-    (b.outputTokPerSec ?? 0) - (a.outputTokPerSec ?? 0) ||
+    (a.retired ? 1 : 0) - (b.retired ? 1 : 0) ||
     a.name.localeCompare(b.name)
   );
 }
