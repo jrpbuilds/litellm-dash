@@ -2,7 +2,7 @@
 
 A small usage dashboard for a [LiteLLM](https://github.com/BerriAI/litellm) proxy that runs without a database.
 
-![Dashboard with token cards, cumulative usage chart and request log with an expanded request](docs/screenshot.png)
+![Dashboard with token and request cards, per-day stacked usage chart and the request log with an expanded request](docs/screenshot.png)
 
 LiteLLM's built-in UI needs Postgres. This project needs nothing extra: a LiteLLM callback logs every request to a SQLite file, and a Bun web app reads that file (read-only) and shows token totals, a per-model or per-provider chart, and a request log with CSV export. Click a request to see its routing, token split, latency against the model's average and p95, and any error. It doesn't track cost.
 
